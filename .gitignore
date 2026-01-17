@@ -1,0 +1,174 @@
+# ============================================
+# MyBB Playground - Comprehensive .gitignore
+# ============================================
+
+# ===========================================
+# MyBB Specific
+# ===========================================
+# Database credentials and sensitive config
+TestForum/inc/settings.php
+TestForum/inc/config.php
+
+# Cache files (regenerated)
+TestForum/cache/*.php
+TestForum/cache/themes/
+!TestForum/cache/index.html
+
+# User uploads
+TestForum/uploads/
+TestForum/avatars/
+
+# Install directory (should be removed after install)
+TestForum/install/lock
+
+# MyBB backups
+TestForum/backups/
+*.sql
+*.sql.gz
+
+# Admin session files
+TestForum/admin/backups/
+
+# ===========================================
+# VSCode Extension (vscode-mybbbridge)
+# ===========================================
+vscode-mybbbridge
+# Compiled output
+vscode-mybbbridge/out/
+
+# Dependencies
+vscode-mybbbridge/node_modules/
+
+# Extension packages (keep for releases, comment out if needed)
+# vscode-mybbbridge/*.vsix
+
+# Credentials config - NEVER commit this
+.vscode/mbbb.json
+**/mbbb.json
+
+# Extension logs
+vscode-mybbbridge/*.log
+mybbbridge_extension.log
+
+# ===========================================
+# Python
+# ===========================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+
+# Type checking
+.mypy_cache/
+.pytype/
+
+# ===========================================
+# Node.js (for any tooling)
+# ===========================================
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.npm
+
+# ===========================================
+# Environment & Secrets
+# ===========================================
+.env
+.env.local
+.env.*.local
+*.env
+secrets.json
+credentials.json
+config.local.json
+
+# ===========================================
+# IDE & Editor
+# ===========================================
+.idea/
+*.swp
+*.swo
+*~
+.project
+.settings/
+*.sublime-workspace
+*.sublime-project
+
+# VSCode - keep .vscode but exclude sensitive files
+!.vscode/
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+
+# ===========================================
+# OS Generated
+# ===========================================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# ===========================================
+# Logs & Debug
+# ===========================================
+*.log
+logs/
+debug/
+*.debug
+
+# ===========================================
+# MCP Server / Python Bridge
+# ===========================================
+# Will add specific patterns as we build this
+mcp_server/.env
+mcp_server/logs/
+
+# ===========================================
+# Docker (if we use it)
+# ===========================================
+docker-compose.override.yml
+.docker/
+
+# ===========================================
+# Testing artifacts
+# ===========================================
+coverage/
+.nyc_output/
+test-results/
