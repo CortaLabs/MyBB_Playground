@@ -6,6 +6,11 @@ from dataclasses import dataclass
 from dotenv import load_dotenv
 
 
+class ConfigurationError(Exception):
+    """Raised when required configuration is missing or invalid."""
+    pass
+
+
 @dataclass
 class DatabaseConfig:
     host: str
@@ -14,6 +19,8 @@ class DatabaseConfig:
     user: str
     password: str
     prefix: str = "mybb_"
+    pool_size: int = 5
+    pool_name: str = "mybb_pool"
 
 
 @dataclass
@@ -37,13 +44,24 @@ def load_config(env_path: Path | None = None) -> MyBBConfig:
                 load_dotenv(env_file)
                 break
 
+    # Validate required password is set
+    db_password = os.getenv("MYBB_DB_PASS")
+    if not db_password:
+        raise ConfigurationError(
+            "Database password is required but not configured.\n"
+            "Please set MYBB_DB_PASS in your .env file or environment variables.\n"
+            "Example: MYBB_DB_PASS=your_secure_password"
+        )
+
     db_config = DatabaseConfig(
         host=os.getenv("MYBB_DB_HOST", "localhost"),
         port=int(os.getenv("MYBB_DB_PORT", "3306")),
         database=os.getenv("MYBB_DB_NAME", "mybb_dev"),
         user=os.getenv("MYBB_DB_USER", "mybb_user"),
-        password=os.getenv("MYBB_DB_PASS", ""),
+        password=db_password,
         prefix=os.getenv("MYBB_DB_PREFIX", "mybb_"),
+        pool_size=int(os.getenv("MYBB_DB_POOL_SIZE", "5")),
+        pool_name=os.getenv("MYBB_DB_POOL_NAME", "mybb_pool"),
     )
 
     # Find MyBB root

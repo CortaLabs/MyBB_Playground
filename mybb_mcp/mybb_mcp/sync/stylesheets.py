@@ -133,8 +133,17 @@ class StylesheetExporter:
             # Create directory if needed
             file_path.parent.mkdir(parents=True, exist_ok=True)
 
-            # Write stylesheet file
-            file_path.write_text(content, encoding='utf-8')
+            # Write stylesheet file atomically (write to .tmp, then rename)
+            temp_path = file_path.with_suffix('.tmp')
+            try:
+                temp_path.write_text(content, encoding='utf-8')
+                # Atomic rename (POSIX guarantees atomicity for same-filesystem rename)
+                temp_path.rename(file_path)
+            except Exception as e:
+                # Clean up temp file on any error
+                if temp_path.exists():
+                    temp_path.unlink()
+                raise
 
             files_exported += 1
 
@@ -179,8 +188,12 @@ class StylesheetImporter:
             True if import succeeded, False otherwise
 
         Raises:
-            ValueError: If theme not found
+            ValueError: If theme not found or content is empty
         """
+        # Defense-in-depth: validate content even if watcher already checked
+        if not content or len(content.strip()) == 0:
+            raise ValueError(f"Cannot import empty stylesheet: {stylesheet_name}")
+
         # Step 1: Verify theme exists and get tid
         theme = self.db.get_theme_by_name(theme_name)
         if not theme:

@@ -190,6 +190,9 @@ function {codename}_{hook}(&$args)
     global $mybb, $db, $templates, $lang;
 
     // Your hook code here
+
+    // For form submissions, verify CSRF token:
+    // verify_post_check($mybb->get_input('my_post_key'));
 }}
 ''')
 
@@ -223,8 +226,19 @@ if(defined('THIS_SCRIPT'))
     );
     $db->insert_query('templates', $template);''')
 
+    activate_code = "\n".join(activate_parts) if activate_parts else "    // Nothing to activate"
+
+    # Deactivation code
+    deactivate_code = "    // Nothing to deactivate"
+    if has_templates:
+        deactivate_code = f'''    // Remove template edits if any
+    require_once MYBB_ROOT.'inc/adminfunctions_templates.php';
+    // find_replace_templatesets('index', '#'.preg_quote('{{${codename}}}').'#', '');'''
+
+    # Install code
+    install_parts = []
     if has_settings:
-        activate_parts.append(f'''    // Add settings group
+        install_parts.append(f'''    // Add settings group
     $group = array(
         'name' => '{codename}',
         'title' => '{plugin_name}',
@@ -248,26 +262,40 @@ if(defined('THIS_SCRIPT'))
 
     rebuild_settings();''')
 
-    activate_code = "\n".join(activate_parts) if activate_parts else "    // Nothing to activate"
-
-    # Deactivation code
-    deactivate_code = "    // Nothing to deactivate"
-    if has_templates:
-        deactivate_code = f'''    // Remove template edits if any
-    require_once MYBB_ROOT.'inc/adminfunctions_templates.php';
-    // find_replace_templatesets('index', '#'.preg_quote('{{${codename}}}').'#', '');'''
-
-    # Install code
-    install_parts = []
     if has_database:
-        install_parts.append(f'''    // Create database table
-    $db->write_query("CREATE TABLE IF NOT EXISTS ".TABLE_PREFIX."{codename}_data (
-        id INT UNSIGNED NOT NULL AUTO_INCREMENT,
-        uid INT UNSIGNED NOT NULL DEFAULT 0,
-        data TEXT,
-        dateline INT UNSIGNED NOT NULL DEFAULT 0,
-        PRIMARY KEY (id)
-    ) ENGINE=MyISAM;");''')
+        install_parts.append(f'''    // Create database table with multi-DB support
+    $collation = $db->build_create_table_collation();
+
+    if(!$db->table_exists('{codename}_data')) {{
+        switch($db->type) {{
+            case "pgsql":
+                $db->write_query("CREATE TABLE ".TABLE_PREFIX."{codename}_data (
+                    id serial,
+                    uid int NOT NULL default 0,
+                    data text,
+                    dateline int NOT NULL default 0,
+                    PRIMARY KEY (id)
+                );");
+                break;
+            case "sqlite":
+                $db->write_query("CREATE TABLE ".TABLE_PREFIX."{codename}_data (
+                    id INTEGER PRIMARY KEY,
+                    uid INTEGER NOT NULL default 0,
+                    data TEXT,
+                    dateline INTEGER NOT NULL default 0
+                );");
+                break;
+            default:  // MySQL/MariaDB
+                $db->write_query("CREATE TABLE ".TABLE_PREFIX."{codename}_data (
+                    id int unsigned NOT NULL auto_increment,
+                    uid int unsigned NOT NULL default 0,
+                    data text,
+                    dateline int unsigned NOT NULL default 0,
+                    PRIMARY KEY (id)
+                ) ENGINE=MyISAM{{$collation}};");
+                break;
+        }}
+    }}''')
 
     install_code = "\n".join(install_parts) if install_parts else "    // Nothing to install"
 

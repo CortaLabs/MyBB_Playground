@@ -4,9 +4,11 @@ Monitors sync directory for file changes and triggers appropriate import operati
 Handles both regular writes and atomic writes (used by Claude Code and other editors).
 """
 
+import asyncio
 import time
 from pathlib import Path
 from threading import Lock
+from typing import Literal, Optional
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler, FileSystemEvent
 
@@ -34,7 +36,8 @@ class SyncEventHandler(FileSystemEventHandler):
         template_importer: TemplateImporter,
         stylesheet_importer: StylesheetImporter,
         cache_refresher: CacheRefresher,
-        router: PathRouter
+        router: PathRouter,
+        work_queue: asyncio.Queue
     ):
         """Initialize sync event handler.
 
@@ -43,12 +46,14 @@ class SyncEventHandler(FileSystemEventHandler):
             stylesheet_importer: StylesheetImporter instance for stylesheet updates
             cache_refresher: CacheRefresher instance for cache refresh
             router: PathRouter instance for path parsing
+            work_queue: Asyncio queue for thread-safe work submission
         """
         super().__init__()
         self.template_importer = template_importer
         self.stylesheet_importer = stylesheet_importer
         self.cache_refresher = cache_refresher
         self.router = router
+        self.work_queue = work_queue
 
         # Debouncing: track last sync time per file
         self._last_sync: dict[str, float] = {}
@@ -83,6 +88,9 @@ class SyncEventHandler(FileSystemEventHandler):
         if not path.is_file():
             return
         if path.name.startswith('.') or path.name.endswith('~'):
+            return
+        # Ignore .tmp files used for atomic writes
+        if path.suffix == '.tmp':
             return
 
         # Debounce check
@@ -142,19 +150,26 @@ class SyncEventHandler(FileSystemEventHandler):
             if parsed.type != "template" or not parsed.set_name or not parsed.template_name:
                 return
 
+            # Validate file size before reading (prevent empty file corruption)
+            try:
+                file_size = path.stat().st_size
+                if file_size == 0:
+                    print(f"[disk-sync] WARNING: Skipping empty file: {path}")
+                    return
+            except FileNotFoundError:
+                # File was deleted between event and processing
+                return
+
             # Read file content
             content = path.read_text(encoding='utf-8')
 
-            # Import template to database
-            import asyncio
-            asyncio.run(
-                self.template_importer.import_template(
-                    parsed.set_name,
-                    parsed.template_name,
-                    content
-                )
-            )
-            print(f"[disk-sync] Template synced: {parsed.template_name}")
+            # Queue work for async processing (thread-safe)
+            self.work_queue.put_nowait({
+                "type": "template",
+                "set_name": parsed.set_name,
+                "template_name": parsed.template_name,
+                "content": content
+            })
 
         except Exception as e:
             print(f"[disk-sync] Template sync error: {e}")
@@ -172,27 +187,26 @@ class SyncEventHandler(FileSystemEventHandler):
             if parsed.type != "stylesheet" or not parsed.theme_name or not parsed.stylesheet_name:
                 return
 
+            # Validate file size before reading (prevent empty file corruption)
+            try:
+                file_size = path.stat().st_size
+                if file_size == 0:
+                    print(f"[disk-sync] WARNING: Skipping empty file: {path}")
+                    return
+            except FileNotFoundError:
+                # File was deleted between event and processing
+                return
+
             # Read file content
             content = path.read_text(encoding='utf-8')
 
-            # Import stylesheet to database
-            import asyncio
-            asyncio.run(
-                self.stylesheet_importer.import_stylesheet(
-                    parsed.theme_name,
-                    parsed.stylesheet_name,
-                    content
-                )
-            )
-
-            # Refresh cache
-            asyncio.run(
-                self.cache_refresher.refresh_stylesheet(
-                    parsed.theme_name,
-                    parsed.stylesheet_name
-                )
-            )
-            print(f"[disk-sync] Stylesheet synced: {parsed.stylesheet_name}")
+            # Queue work for async processing (thread-safe)
+            self.work_queue.put_nowait({
+                "type": "stylesheet",
+                "theme_name": parsed.theme_name,
+                "stylesheet_name": parsed.stylesheet_name,
+                "content": content
+            })
 
         except Exception as e:
             print(f"[disk-sync] Stylesheet sync error: {e}")
@@ -219,23 +233,118 @@ class FileWatcher:
             router: PathRouter instance
         """
         self.sync_root = sync_root
+        self.template_importer = template_importer
+        self.stylesheet_importer = stylesheet_importer
+        self.cache_refresher = cache_refresher
+
+        # Thread-safe queue for passing work from watchdog threads to async context
+        self.work_queue: asyncio.Queue = asyncio.Queue()
+
         self.observer = Observer()
         self.handler = SyncEventHandler(
             template_importer,
             stylesheet_importer,
             cache_refresher,
-            router
+            router,
+            self.work_queue
         )
+
+        # Background task for processing queued work
+        self._processor_task: Optional[asyncio.Task] = None
+
+        # Pause mechanism for export operations
+        self._paused = False
+        self._pause_lock = Lock()
+
+    def pause(self) -> None:
+        """Pause watcher event processing. Idempotent.
+
+        Used during export operations to prevent race conditions.
+        Queued events will wait until resume() is called.
+        """
+        with self._pause_lock:
+            if self._paused:
+                return
+            self._paused = True
+            print("[disk-sync] Watcher paused")
+
+    def resume(self) -> None:
+        """Resume watcher event processing. Idempotent.
+
+        Allows queued events to be processed after exports complete.
+        """
+        with self._pause_lock:
+            if not self._paused:
+                return
+            self._paused = False
+            print("[disk-sync] Watcher resumed")
+
+    async def _process_work_queue(self) -> None:
+        """Background task that processes queued file changes.
+
+        Runs in the main asyncio event loop and processes work items
+        queued by watchdog worker threads.
+        """
+        while True:
+            try:
+                # Get work item from queue
+                work_item = await self.work_queue.get()
+
+                # Wait while paused (e.g., during export operations)
+                while self._paused:
+                    await asyncio.sleep(0.1)
+
+                # Process based on type
+                if work_item["type"] == "template":
+                    await self.template_importer.import_template(
+                        work_item["set_name"],
+                        work_item["template_name"],
+                        work_item["content"]
+                    )
+                    print(f"[disk-sync] Template synced: {work_item['template_name']}")
+
+                elif work_item["type"] == "stylesheet":
+                    await self.stylesheet_importer.import_stylesheet(
+                        work_item["theme_name"],
+                        work_item["stylesheet_name"],
+                        work_item["content"]
+                    )
+                    await self.cache_refresher.refresh_stylesheet(
+                        work_item["theme_name"],
+                        work_item["stylesheet_name"]
+                    )
+                    print(f"[disk-sync] Stylesheet synced: {work_item['stylesheet_name']}")
+
+                # Mark task as done
+                self.work_queue.task_done()
+
+            except asyncio.CancelledError:
+                # Task cancelled during shutdown
+                break
+            except Exception as e:
+                print(f"[disk-sync] Queue processor error: {e}")
+                # Mark task as done even on error to prevent queue blocking
+                self.work_queue.task_done()
 
     def start(self) -> None:
         """Start watching the sync directory."""
+        # Start background processor task
+        if self._processor_task is None or self._processor_task.done():
+            self._processor_task = asyncio.create_task(self._process_work_queue())
+
+        # Start file system observer
         self.observer.schedule(self.handler, str(self.sync_root), recursive=True)
         self.observer.start()
 
     def stop(self) -> None:
         """Stop watching the sync directory."""
+        # Stop file system observer
         self.observer.stop()
         self.observer.join()
+
+        # Cancel background processor task
+        if self._processor_task and not self._processor_task.done():
+            self._processor_task.cancel()
 
     @property
     def is_running(self) -> bool:

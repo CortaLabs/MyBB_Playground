@@ -121,8 +121,17 @@ class TemplateExporter:
             # Create directory if needed
             file_path.parent.mkdir(parents=True, exist_ok=True)
 
-            # Write template file
-            file_path.write_text(content, encoding='utf-8')
+            # Write template file atomically (write to .tmp, then rename)
+            temp_path = file_path.with_suffix('.tmp')
+            try:
+                temp_path.write_text(content, encoding='utf-8')
+                # Atomic rename (POSIX guarantees atomicity for same-filesystem rename)
+                temp_path.rename(file_path)
+            except Exception as e:
+                # Clean up temp file on any error
+                if temp_path.exists():
+                    temp_path.unlink()
+                raise
 
             files_exported += 1
             group_counts[group_name] = group_counts.get(group_name, 0) + 1
@@ -167,8 +176,12 @@ class TemplateImporter:
             True if import succeeded, False otherwise
 
         Raises:
-            ValueError: If template set not found
+            ValueError: If template set not found or content is empty
         """
+        # Defense-in-depth: validate content even if watcher already checked
+        if not content or len(content.strip()) == 0:
+            raise ValueError(f"Cannot import empty template: {template_name}")
+
         # Step 1: Get template set ID
         template_set = self.db.get_template_set_by_name(set_name)
         if not template_set:
