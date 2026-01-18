@@ -730,8 +730,8 @@ class MyBBDatabase:
         with self.cursor() as cur:
             cur.execute(
                 f"INSERT INTO {self.table('threads')} "
-                f"(fid, subject, prefix, uid, username, dateline, firstpost, lastpost, lastposter, lastposteruid, replies, visible) "
-                f"VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 0, 1)",
+                f"(fid, subject, prefix, uid, username, dateline, firstpost, lastpost, lastposter, lastposteruid, replies, visible, notes) "
+                f"VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 0, 1, '')",
                 (fid, subject, prefix, uid, username, dateline, firstpost_pid, dateline, username, uid)
             )
             return cur.lastrowid
