@@ -161,6 +161,13 @@ mcp_server/.env
 mcp_server/logs/
 
 # ===========================================
+# Plugin Manager
+# ===========================================
+plugin_manager/plugins/private/
+plugin_manager/themes/private/
+.plugin_manager/projects.db
+
+# ===========================================
 # Docker (if we use it)
 # ===========================================
 docker-compose.override.yml

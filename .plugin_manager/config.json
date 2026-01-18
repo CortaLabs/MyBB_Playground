@@ -1,0 +1,11 @@
+{
+  "workspaces": {
+    "plugins": "plugin_manager/plugins",
+    "themes": "plugin_manager/themes"
+  },
+  "database_path": ".plugin_manager/projects.db",
+  "schema_path": ".plugin_manager/schema/projects.sql",
+  "default_visibility": "public",
+  "default_author": "Developer",
+  "default_mybb_compatibility": "18*"
+}
