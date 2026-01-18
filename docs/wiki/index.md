@@ -61,6 +61,12 @@ MyBB-specific development patterns and security guidelines.
 - [Theme Development](best_practices/theme_development.md) - Theme and stylesheet best practices
 - [Security Guidelines](best_practices/security.md) - Security considerations for MyBB development
 
+### 📖 [Tutorials](tutorials/index.md)
+Hands-on guides capturing real development sessions with learnings.
+
+**Contents:**
+- [Dice Roller Build](tutorials/dice_roller_build.md) - BBCode dice roller with database tracking and CSS effects
+
 ## Quick Links
 
 - **[CLAUDE.md](/CLAUDE.md)** - Quick setup and orchestration protocol
