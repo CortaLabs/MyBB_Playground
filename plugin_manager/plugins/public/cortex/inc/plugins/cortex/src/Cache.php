@@ -37,14 +37,21 @@ class Cache
     private array $memoryCache = [];
 
     /**
+     * Cache TTL in seconds (0 = no expiration)
+     */
+    private int $ttl = 0;
+
+    /**
      * Constructor
      *
      * @param string $cacheDir Path to cache directory
+     * @param int $ttl Cache TTL in seconds (0 = no expiration)
      */
-    public function __construct(string $cacheDir)
+    public function __construct(string $cacheDir, int $ttl = 0)
     {
         // Ensure trailing slash
         $this->cacheDir = rtrim($cacheDir, '/\\') . '/';
+        $this->ttl = $ttl;
 
         // Auto-create directory if missing
         if (!is_dir($this->cacheDir)) {
@@ -76,6 +83,16 @@ class Cache
         // Check disk cache
         if (!is_file($cacheFile)) {
             return null;
+        }
+
+        // TTL check - if TTL is set and file is expired, treat as cache miss
+        if ($this->ttl > 0) {
+            $mtime = @filemtime($cacheFile);
+            if ($mtime !== false && (time() - $mtime) > $this->ttl) {
+                // Cache expired - delete stale file and return miss
+                @unlink($cacheFile);
+                return null;
+            }
         }
 
         $content = @file_get_contents($cacheFile);

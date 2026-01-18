@@ -259,6 +259,108 @@ For non-trivial features, follow the 5-step PROTOCOL workflow using specialized 
 - **Coder** → sonnet or opus (implementation quality matters)
 - **Review** → sonnet or opus (needs to catch issues architect/coder missed)
 
+### MyBB-Specialized Agents (PREFERRED)
+
+For all MyBB development work, **prefer these specialized agents over the generic Scribe agents**. They have MyBB-specific knowledge baked in and know the Plugin Manager/disk sync workflows.
+
+#### PROTOCOL Workflow Agents (MyBB-Specialized)
+
+| Step | Agent | Purpose | When to Use |
+|------|-------|---------|-------------|
+| 1 | `mybb-research-analyst` | Investigate MyBB internals using 85+ MCP tools | Analyzing plugins, hooks, templates before development |
+| 2 | `mybb-architect` | Design plugins/templates/themes | Creating architecture for new MyBB features |
+| 3 | `mybb-review-agent` | Review MyBB work for workflow compliance | Pre/post-implementation reviews |
+| 4 | `mybb-coder` | Implement plugins/templates | Writing PHP, editing templates via disk sync |
+| 5 | `mybb-review-agent` | Final validation and grading | Post-implementation verification |
+| * | `mybb-bug-hunter` | Diagnose plugin/template issues | Debugging MyBB-specific problems |
+
+#### Deep Specialist Agents (Consultants)
+
+| Agent | Expertise | When to Use |
+|-------|-----------|-------------|
+| `mybb-plugin-specialist` | Plugin lifecycle, hooks, settings, security patterns | Complex plugin architecture decisions, hook selection, debugging lifecycle issues |
+| `mybb-template-specialist` | Template inheritance, Cortex syntax, disk sync, find_replace patterns | Template modification strategy, Cortex debugging, theme development |
+
+#### MyBB vs Generic Scribe Agents
+
+| Use MyBB Agents When... | Use Generic Scribe Agents When... |
+|-------------------------|-----------------------------------|
+| Creating/modifying MyBB plugins | Working on MCP server Python code |
+| Working with templates or themes | Working on non-MyBB infrastructure |
+| Debugging plugin/template issues | General codebase exploration |
+| Need MyBB-specific hook/API knowledge | Language-agnostic research |
+
+#### Multi-Coder Workflow (CRITICAL)
+
+**NEVER send a single coder on a large scope.** Break work into bounded task packages and spawn multiple coders:
+
+| Scope Size | Approach |
+|------------|----------|
+| 1-2 files, <100 lines | Single coder |
+| 3-5 files, one component | Single coder with bounded scope |
+| Multiple components | **Multiple coders** - one per component |
+| Cross-cutting changes | **Sequential coders** - respect dependencies |
+
+**Coder Scoping Rules:**
+- Each coder gets ONE bounded task package from PHASE_PLAN.md
+- Task package specifies exact files, line ranges, and verification criteria
+- **Concurrent coders CANNOT have overlapping file scopes** - if two tasks touch the same file, they must be sequential
+- Orchestrator waits for each coder to complete before spawning coders that touch the same files
+
+**Parallel vs Sequential:**
+```
+Different files, no dependencies → CAN be parallel
+Same files touched            → MUST be sequential
+Logical dependencies          → MUST be sequential (usually)
+```
+
+**Before spawning parallel coders, verify:**
+1. No file overlap between task packages
+2. No logical dependencies (one task's output needed by another)
+3. Each coder has complete context for their isolated scope
+
+**Example: Using MyBB Agents**
+
+```python
+# Research phase - use mybb-research-analyst
+Task(
+    subagent_type="mybb-research-analyst",
+    model="haiku",
+    prompt="Analyze how reputation plugins work in MyBB..."
+)
+
+# Architecture phase - use mybb-architect
+Task(
+    subagent_type="mybb-architect",
+    model="opus",
+    prompt="Design a karma plugin based on the research findings..."
+)
+
+# Implementation phase - MULTIPLE CODERS for large scope
+# Coder 1: Phase 1 (must be first - creates settings)
+Task(
+    subagent_type="mybb-coder",
+    model="sonnet",
+    prompt="Implement Phase 1 Task Packages 1.1-1.4: MyBB settings lifecycle..."
+)
+
+# After Phase 1 completes, spawn parallel coders for independent work:
+# Coder 2, 3, 4 in parallel (independent components)
+Task(subagent_type="mybb-coder", prompt="Implement Phase 2: SecurityPolicy...")
+Task(subagent_type="mybb-coder", prompt="Implement Phase 3: Parser...")
+Task(subagent_type="mybb-coder", prompt="Implement Phase 4: Cache...")
+
+# After all complete, final integration coder
+Task(subagent_type="mybb-coder", prompt="Implement Phase 5-6: Wiring and testing...")
+
+# For deep guidance - use specialists
+Task(
+    subagent_type="mybb-plugin-specialist",
+    model="sonnet",
+    prompt="Help me understand why my postbit hook isn't firing..."
+)
+```
+
 ### Using Haiku Swarms for Research
 
 For context gathering, use **haiku model** with the Explore agent or research-analyst:

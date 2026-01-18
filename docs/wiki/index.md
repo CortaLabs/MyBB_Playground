@@ -61,6 +61,12 @@ MyBB-specific development patterns and security guidelines.
 - [Theme Development](best_practices/theme_development.md) - Theme and stylesheet best practices
 - [Security Guidelines](best_practices/security.md) - Security considerations for MyBB development
 
+### 🔌 [Plugins](plugins/index.md)
+Documentation for plugins that ship with MyBB Playground.
+
+**Included Plugins:**
+- [Cortex](plugins/cortex.md) - Secure template conditionals and expressions
+
 ### 📖 [Tutorials](tutorials/index.md)
 Hands-on guides capturing real development sessions with learnings.
 

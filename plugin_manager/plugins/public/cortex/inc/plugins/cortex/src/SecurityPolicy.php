@@ -504,6 +504,40 @@ class SecurityPolicy
     ];
 
     /**
+     * Additional allowed functions (from config)
+     * @var array<string>
+     */
+    private array $additionalAllowedFunctions = [];
+
+    /**
+     * Denied functions (takes precedence over allowed)
+     * @var array<string>
+     */
+    private array $deniedFunctions = [];
+
+    /**
+     * Maximum expression length (0 = unlimited)
+     */
+    private int $maxExpressionLength = 0;
+
+    /**
+     * Constructor
+     *
+     * @param array $additionalAllowed Additional functions to allow
+     * @param array $denied Functions to deny (overrides allowed)
+     * @param int $maxExpressionLength Maximum expression length
+     */
+    public function __construct(
+        array $additionalAllowed = [],
+        array $denied = [],
+        int $maxExpressionLength = 0
+    ) {
+        $this->additionalAllowedFunctions = array_map('strtolower', array_filter($additionalAllowed));
+        $this->deniedFunctions = array_map('strtolower', array_filter($denied));
+        $this->maxExpressionLength = $maxExpressionLength;
+    }
+
+    /**
      * Validate a function name against the whitelist.
      *
      * @param string $func The function name to validate
@@ -530,7 +564,19 @@ class SecurityPolicy
     public function isAllowedFunction(string $func): bool
     {
         $func = strtolower(trim($func));
-        return in_array($func, self::ALLOWED_FUNCTIONS, true);
+
+        // Denied list takes precedence
+        if (in_array($func, $this->deniedFunctions, true)) {
+            return false;
+        }
+
+        // Check built-in whitelist
+        if (in_array($func, self::ALLOWED_FUNCTIONS, true)) {
+            return true;
+        }
+
+        // Check additional allowed functions from config
+        return in_array($func, $this->additionalAllowedFunctions, true);
     }
 
     /**
@@ -545,6 +591,11 @@ class SecurityPolicy
      */
     public function validateExpression(string $expr): string
     {
+        // Check expression length first (before unescaping)
+        if ($this->maxExpressionLength > 0 && strlen($expr) > $this->maxExpressionLength) {
+            throw SecurityException::expressionTooLong(strlen($expr), $this->maxExpressionLength);
+        }
+
         // Unescape MyBB's addslashes() escaping
         $unescaped = $this->unescape($expr);
 

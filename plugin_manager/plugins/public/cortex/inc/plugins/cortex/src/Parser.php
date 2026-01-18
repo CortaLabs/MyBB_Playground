@@ -104,6 +104,21 @@ class Parser
     private ?string $templateName = null;
 
     /**
+     * Maximum nesting depth for if blocks (0 = unlimited)
+     */
+    private int $maxNestingDepth = 0;
+
+    /**
+     * Constructor
+     *
+     * @param int $maxNestingDepth Maximum nesting depth (0 = unlimited)
+     */
+    public function __construct(int $maxNestingDepth = 0)
+    {
+        $this->maxNestingDepth = $maxNestingDepth;
+    }
+
+    /**
      * Tokenize template content into Token array.
      *
      * @param string $template The template content to parse
@@ -262,6 +277,17 @@ class Parser
             switch ($token->type) {
                 case TokenType::IF_OPEN:
                     $ifStack[] = $token;
+                    $currentDepth = count($ifStack);
+
+                    // Check nesting depth limit
+                    if ($this->maxNestingDepth > 0 && $currentDepth > $this->maxNestingDepth) {
+                        throw ParseException::nestingTooDeep(
+                            $currentDepth,
+                            $this->maxNestingDepth,
+                            $token->position,
+                            $this->templateName
+                        );
+                    }
                     break;
 
                 case TokenType::ELSEIF:

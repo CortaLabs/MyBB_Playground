@@ -26,6 +26,14 @@ use Exception;
 class SecurityException extends Exception
 {
     /**
+     * Error codes for different violation types.
+     */
+    public const CODE_DISALLOWED_FUNCTION = 1;
+    public const CODE_FORBIDDEN_PATTERN = 2;
+    public const CODE_EXPRESSION_FUNCTION = 3;
+    public const CODE_EXPRESSION_TOO_LONG = 4;
+
+    /**
      * The function or pattern that caused the violation.
      */
     private string $violatingElement;
@@ -39,12 +47,14 @@ class SecurityException extends Exception
      * Create a new SecurityException.
      *
      * @param string $message The error message
+     * @param int $code Error code constant
      * @param string $violatingElement The element that caused the violation
      * @param string $category The violation category
      * @param Exception|null $previous The previous exception for chaining
      */
     public function __construct(
         string $message,
+        int $code = 0,
         string $violatingElement = '',
         string $category = 'general',
         ?Exception $previous = null
@@ -52,7 +62,7 @@ class SecurityException extends Exception
         $this->violatingElement = $violatingElement;
         $this->category = $category;
 
-        parent::__construct($message, 0, $previous);
+        parent::__construct($message, $code, $previous);
     }
 
     /**
@@ -85,6 +95,7 @@ class SecurityException extends Exception
     {
         return new self(
             "Function not allowed: {$func}",
+            self::CODE_DISALLOWED_FUNCTION,
             $func,
             'function'
         );
@@ -106,6 +117,7 @@ class SecurityException extends Exception
 
         return new self(
             "Forbidden pattern detected: {$description}",
+            self::CODE_FORBIDDEN_PATTERN,
             $truncatedExpr,
             'pattern'
         );
@@ -127,8 +139,26 @@ class SecurityException extends Exception
 
         return new self(
             "Function call not allowed in expression: {$func}",
+            self::CODE_EXPRESSION_FUNCTION,
             $func,
             'expression_function'
+        );
+    }
+
+    /**
+     * Create exception for expression too long
+     *
+     * @param int $actual Actual length
+     * @param int $max Maximum allowed
+     * @return self
+     */
+    public static function expressionTooLong(int $actual, int $max): self
+    {
+        return new self(
+            "Expression too long: {$actual} characters exceeds maximum of {$max}",
+            self::CODE_EXPRESSION_TOO_LONG,
+            '',
+            'expression_length'
         );
     }
 }

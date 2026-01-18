@@ -114,8 +114,9 @@ function cortex_deactivate(): void
  */
 function cortex_is_installed(): bool
 {
-    // Cortex has no database tables - always considered installed
-    return true;
+    global $db;
+    $query = $db->simple_select('settinggroups', 'gid', "name = 'cortex'", ['limit' => 1]);
+    return (bool) $db->fetch_field($query, 'gid');
 }
 
 /**
@@ -126,7 +127,36 @@ function cortex_is_installed(): bool
  */
 function cortex_install(): void
 {
-    // No database tables required
+    global $db, $lang;
+    $lang->load('cortex', false, true);
+
+    // Create setting group
+    $setting_group = [
+        'name'        => 'cortex',
+        'title'       => $lang->cortex_settings_title ?? 'Cortex Template Engine',
+        'description' => $lang->cortex_settings_desc ?? 'Settings for the Cortex secure template conditionals plugin',
+        'disporder'   => 100,
+        'isdefault'   => 0
+    ];
+    $gid = $db->insert_query('settinggroups', $setting_group);
+
+    // Settings array
+    $settings = [
+        ['name' => 'cortex_enabled', 'title' => 'Enable Cortex', 'description' => 'Enable or disable Cortex template processing', 'optionscode' => 'yesno', 'value' => '1', 'disporder' => 1],
+        ['name' => 'cortex_debug_mode', 'title' => 'Debug Mode', 'description' => 'Log parsing errors to PHP error log', 'optionscode' => 'yesno', 'value' => '0', 'disporder' => 2],
+        ['name' => 'cortex_cache_enabled', 'title' => 'Enable Cache', 'description' => 'Enable disk caching of compiled templates', 'optionscode' => 'yesno', 'value' => '1', 'disporder' => 3],
+        ['name' => 'cortex_cache_ttl', 'title' => 'Cache TTL (seconds)', 'description' => 'Cache expiration time in seconds. 0 = never expires', 'optionscode' => 'numeric', 'value' => '0', 'disporder' => 4],
+        ['name' => 'cortex_max_nesting_depth', 'title' => 'Max Nesting Depth', 'description' => 'Maximum nested if-block depth. 0 = unlimited', 'optionscode' => 'numeric', 'value' => '10', 'disporder' => 5],
+        ['name' => 'cortex_max_expression_length', 'title' => 'Max Expression Length', 'description' => 'Maximum expression length in characters. 0 = unlimited', 'optionscode' => 'numeric', 'value' => '1000', 'disporder' => 6],
+        ['name' => 'cortex_denied_functions', 'title' => 'Denied Functions', 'description' => 'Comma-separated list of functions to block (e.g., strlen,substr)', 'optionscode' => 'textarea', 'value' => '', 'disporder' => 7],
+    ];
+
+    foreach ($settings as $setting) {
+        $setting['gid'] = $gid;
+        $db->insert_query('settings', $setting);
+    }
+
+    rebuild_settings();
 }
 
 /**
@@ -137,8 +167,26 @@ function cortex_install(): void
  */
 function cortex_uninstall(): void
 {
-    // No database cleanup required
-    // Optionally clear cache directory here
+    global $db;
+
+    // Remove settings
+    $db->delete_query('settings', "name LIKE 'cortex_%'");
+
+    // Remove setting group
+    $db->delete_query('settinggroups', "name = 'cortex'");
+
+    rebuild_settings();
+
+    // Optionally clear cache directory
+    $cacheDir = MYBB_ROOT . 'cache/cortex/';
+    if (is_dir($cacheDir)) {
+        $files = glob($cacheDir . '*.php');
+        if ($files) {
+            foreach ($files as $file) {
+                @unlink($file);
+            }
+        }
+    }
 }
 
 /**
@@ -152,12 +200,12 @@ function cortex_uninstall(): void
  */
 function cortex_init(): void
 {
-    global $templates, $lang;
+    global $templates, $lang, $mybb;
 
     // Load language file
     $lang->load('cortex', false, true);
 
-    // Don't run in Admin CP - templates there don't need processing
+    // Don't run in Admin CP
     if (defined('IN_ADMINCP')) {
         return;
     }
@@ -167,15 +215,44 @@ function cortex_init(): void
         return;
     }
 
-    // Don't wrap if already wrapped (prevents double-wrapping)
+    // Don't wrap if already wrapped
     if ($templates instanceof \Cortex\Runtime) {
         return;
     }
 
-    // Load configuration
-    $config = require CORTEX_PATH . 'config.php';
+    // Load file-based config as defaults
+    $fileConfig = require CORTEX_PATH . 'config.php';
 
-    // Skip if disabled in config
+    // Build config from MyBB settings with file fallback
+    $config = [
+        'enabled' => isset($mybb->settings['cortex_enabled'])
+            ? (bool)$mybb->settings['cortex_enabled']
+            : ($fileConfig['enabled'] ?? true),
+        'cache_enabled' => isset($mybb->settings['cortex_cache_enabled'])
+            ? (bool)$mybb->settings['cortex_cache_enabled']
+            : ($fileConfig['cache_enabled'] ?? true),
+        'cache_ttl' => isset($mybb->settings['cortex_cache_ttl'])
+            ? (int)$mybb->settings['cortex_cache_ttl']
+            : ($fileConfig['cache_ttl'] ?? 0),
+        'debug' => isset($mybb->settings['cortex_debug_mode'])
+            ? (bool)$mybb->settings['cortex_debug_mode']
+            : ($fileConfig['debug'] ?? false),
+        'security' => [
+            // additional_allowed_functions stays in file config only (security risk if in ACP)
+            'additional_allowed_functions' => $fileConfig['security']['additional_allowed_functions'] ?? [],
+            'denied_functions' => isset($mybb->settings['cortex_denied_functions'])
+                ? array_filter(array_map('trim', explode(',', $mybb->settings['cortex_denied_functions'])))
+                : ($fileConfig['security']['denied_functions'] ?? []),
+            'max_nesting_depth' => isset($mybb->settings['cortex_max_nesting_depth'])
+                ? (int)$mybb->settings['cortex_max_nesting_depth']
+                : ($fileConfig['security']['max_nesting_depth'] ?? 10),
+            'max_expression_length' => isset($mybb->settings['cortex_max_expression_length'])
+                ? (int)$mybb->settings['cortex_max_expression_length']
+                : ($fileConfig['security']['max_expression_length'] ?? 1000),
+        ],
+    ];
+
+    // Skip if disabled
     if (empty($config['enabled'])) {
         return;
     }
@@ -185,8 +262,6 @@ function cortex_init(): void
         $runtime = new \Cortex\Runtime($templates, $config);
         $templates = $runtime;
     } catch (\Throwable $e) {
-        // If Runtime fails to initialize, log and continue with original templates
-        // Site must never break due to Cortex initialization failure
         if (!empty($config['debug'])) {
             error_log('Cortex initialization failed: ' . $e->getMessage());
         }

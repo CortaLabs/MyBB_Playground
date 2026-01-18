@@ -92,17 +92,24 @@ class Runtime extends \templates
         $this->enabled = $config['enabled'] ?? true;
 
         // Initialize Cortex components
+        // Initialize SecurityPolicy with denied functions and expression length
         $this->security = new SecurityPolicy(
             $config['security']['additional_allowed_functions'] ?? [],
-            $config['security']['denied_functions'] ?? []
+            $config['security']['denied_functions'] ?? [],
+            $config['security']['max_expression_length'] ?? 0
         );
 
-        $this->parser = new Parser($this->security);
+        // Initialize Parser with nesting depth limit
+        $this->parser = new Parser(
+            $config['security']['max_nesting_depth'] ?? 0
+        );
+
         $this->compiler = new Compiler($this->security);
 
-        // Initialize disk cache
+        // Initialize disk cache with TTL
         $cacheDir = MYBB_ROOT . 'cache/cortex/';
-        $this->diskCache = new Cache($cacheDir);
+        $cacheTtl = $config['cache_ttl'] ?? 0;
+        $this->diskCache = new Cache($cacheDir, $cacheTtl);
     }
 
     /**

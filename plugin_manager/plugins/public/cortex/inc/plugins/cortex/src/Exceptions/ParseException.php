@@ -146,4 +146,23 @@ class ParseException extends Exception
             $templateName
         );
     }
+
+    /**
+     * Create exception for nesting too deep
+     *
+     * @param int $actual Actual depth
+     * @param int $max Maximum allowed
+     * @param int $position Position in template
+     * @param string|null $templateName Template name
+     * @return self
+     */
+    public static function nestingTooDeep(int $actual, int $max, int $position, ?string $templateName = null): self
+    {
+        $context = $templateName ? " in template '{$templateName}'" : '';
+        return new self(
+            "Nesting too deep: {$actual} levels exceeds maximum of {$max}{$context} at position {$position}",
+            $position,
+            $templateName
+        );
+    }
 }
