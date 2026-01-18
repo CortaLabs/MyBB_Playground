@@ -5,9 +5,10 @@
 AI-assisted MyBB development toolkit providing MCP tools for Claude Code to interact with MyBB installations. The goal is to make MyBB plugin and theme development accessible through natural language.
 
 **Key Components:**
-- `mybb_mcp/` — Python MCP server exposing MyBB tools to Claude
+- `mybb_mcp/` — Python MCP server exposing 85+ MyBB tools to Claude
 - `TestForum/` — Local MyBB 1.8.x installation for development
-- Template/stylesheet disk sync (planned) — Live file watching with DB sync
+- `mybb_sync/` — Template/stylesheet disk sync with live file watching
+- `plugin_manager/` — Plugin/theme workspace with deployment and PHP lifecycle execution
 
 ## Development Environment
 
@@ -52,11 +53,18 @@ mybb_mcp/
 └── tools/plugins.py    # Plugin scaffolding + hooks reference
 ```
 
-**Tool Categories:**
-- Templates: `mybb_list_template_sets`, `mybb_list_templates`, `mybb_read_template`, `mybb_write_template`
-- Themes: `mybb_list_themes`, `mybb_list_stylesheets`, `mybb_read_stylesheet`, `mybb_write_stylesheet`
-- Plugins: `mybb_list_plugins`, `mybb_read_plugin`, `mybb_create_plugin`, `mybb_list_hooks`, `mybb_analyze_plugin`
-- Database: `mybb_db_query` (SELECT only)
+**Tool Categories (85+ tools):**
+- Templates (9): list, read, write, batch operations, find/replace, outdated detection
+- Themes/Stylesheets (6): list, read, write, create themes
+- Plugins (15): CRUD, hooks discovery, lifecycle management (install/uninstall with PHP execution)
+- Forums/Threads/Posts (17): full content management
+- Users/Moderation (14): user management, mod actions, mod logging
+- Search (4): posts, threads, users, advanced combined search
+- Admin/Settings (11): settings, cache, statistics
+- Tasks (6): scheduled task management
+- Disk Sync (5): export, import, watcher control
+
+See [MCP Tools Reference](docs/wiki/mcp_tools/index.md) for complete documentation.
 
 ### MyBB Template Inheritance
 ```
@@ -67,12 +75,78 @@ sid >= 1  → Template set overrides (custom versions)
 
 When writing templates, always check for master first. Custom templates override master.
 
-### Planned: Disk Sync Feature
-Will mirror VSCode extension behavior:
-- Export templates to `workspace/templates/{set}/{group}/{name}.html`
-- Export stylesheets to `workspace/styles/{theme}/{name}.css`
-- Watch for file changes → update DB
-- Watch for DB changes → update files (via polling or triggers)
+### Disk Sync System
+Templates and stylesheets sync between disk and database:
+- **Location:** `mybb_sync/template_sets/` and `mybb_sync/themes/`
+- **Export:** `mybb_sync_export_templates("Default Templates")` or `mybb_sync_export_stylesheets("Default")`
+- **Watcher:** `mybb_sync_start_watcher()` monitors disk changes → syncs to DB
+- **Workflow:** Edit files on disk, watcher auto-syncs — this is the primary development workflow
+
+See [Disk Sync Architecture](docs/wiki/architecture/disk_sync.md) for implementation details.
+
+## Critical Rules
+
+### DO NOT Edit Core MyBB Files
+**Never modify files in `TestForum/` that are part of core MyBB.** All MyBB customization must be done through:
+- Plugins (`TestForum/inc/plugins/`)
+- Templates (via MCP tools or Admin CP)
+- Stylesheets (via MCP tools or Admin CP)
+- Language files (`TestForum/inc/languages/*/`)
+
+Core files will be overwritten on MyBB upgrades. Hooks and plugins are the correct extension mechanism.
+
+### MyBB Development Workflow
+
+**Template & Stylesheet Editing:**
+- ALWAYS edit via disk sync — edit files in `mybb_sync/`, the watcher syncs to DB automatically
+- Export first if templates don't exist on disk: `mybb_sync_export_templates("Default Templates")`
+- Never use `mybb_write_template` directly during development — disk sync is the workflow
+- Stylesheets work the same way: edit on disk, watcher syncs
+
+**Plugin Development:**
+- Develop plugins in workspace: `plugin_manager/plugins/public/` or `private/`
+- Use `mybb_plugin_install(codename)` to deploy — this runs actual PHP lifecycle (_install, _activate)
+- Don't manually copy files to TestForum — the installer handles file deployment and tracking
+- Each plugin has `meta.json` for metadata — see [Plugin Manager docs](docs/wiki/plugin_manager/workspace.md)
+
+**Theme Development:**
+- Themes live in workspace: `plugin_manager/themes/`
+- Stylesheets use copy-on-write inheritance from parent themes
+- Use disk sync for editing, not direct DB writes
+- See [Theme Development guide](docs/wiki/best_practices/theme_development.md)
+
+**MyBB Context:**
+- MyBB is 15+ year old PHP forum software with a mature but dated architecture
+- Work within MyBB's hook/template system — don't try to modernize MyBB itself
+- We're building tooling to make MyBB development easier and AI-accessible
+- Set realistic expectations — some things are limited by MyBB's design
+
+### Wiki Maintenance
+
+**Mandatory documentation updates:**
+- Any code change affecting documented behavior MUST update relevant wiki pages
+- New features MUST have wiki documentation upon completion
+- Wiki accuracy is not optional — outdated docs are worse than no docs
+
+**What requires wiki updates:**
+- New MCP tools → add to `docs/wiki/mcp_tools/` appropriate category
+- Changed tool parameters/behavior → update tool documentation
+- New Plugin Manager features → update `docs/wiki/plugin_manager/`
+- Architecture changes → update `docs/wiki/architecture/`
+
+### Development Standards
+
+**Don't freestyle — follow the system:**
+- Use Scribe PROTOCOL for non-trivial features (research → architect → review → code → review)
+- Read existing wiki/research docs before implementing
+- Check if an MCP tool exists before writing raw queries or file operations
+- Understand the existing patterns before adding new ones
+
+**MCP tools exist for a reason:**
+- Templates: use disk sync or MCP tools, not raw DB queries
+- Plugins: use Plugin Manager workflow, not manual file copying
+- Settings/cache: use MCP tools for proper cache invalidation
+- Database: `mybb_db_query` is read-only by design — writes go through specialized tools
 
 ## Coding Conventions
 
@@ -302,6 +376,50 @@ append_entry(
 | `.env` | Database credentials and paths (gitignored) |
 | `TestForum/inc/plugins/` | Where plugins are installed |
 | `TestForum/inc/languages/english/` | Language files for plugins |
+
+## Documentation Reference
+
+Comprehensive technical documentation lives in `/docs/wiki/`. Use these for detailed reference — they're kept in sync with the codebase.
+
+### Quick Links
+
+| Section | Index | What's There |
+|---------|-------|--------------|
+| **Getting Started** | [index](docs/wiki/getting_started/index.md) | Installation, quickstart tutorial, prerequisites |
+| **MCP Tools** | [index](docs/wiki/mcp_tools/index.md) | All 85+ tools with parameters, return formats, examples |
+| **Plugin Manager** | [index](docs/wiki/plugin_manager/index.md) | Workspace, deployment, PHP lifecycle, database schema |
+| **Architecture** | [index](docs/wiki/architecture/index.md) | MCP server internals, disk sync, configuration |
+| **Best Practices** | [index](docs/wiki/best_practices/index.md) | Plugin/theme development patterns, security |
+
+### When to Check the Wiki
+
+- **Before implementing a feature** — check if patterns/tools already exist
+- **When using MCP tools** — full parameter docs and examples in `mcp_tools/`
+- **Plugin/theme development** — workflows documented in `plugin_manager/` and `best_practices/`
+- **Understanding the system** — architecture docs explain how components work together
+
+### Wiki Structure
+
+```
+docs/wiki/
+├── index.md                    # Main entry point
+├── getting_started/            # Installation, quickstart
+├── mcp_tools/                  # Tool reference (85+ tools)
+│   ├── index.md               # Overview + tool categories
+│   ├── templates.md           # 9 template tools
+│   ├── themes_stylesheets.md  # 6 theme/style tools
+│   ├── plugins.md             # 15 plugin tools
+│   ├── forums_threads_posts.md # 17 content tools
+│   ├── users_moderation.md    # 14 user/mod tools
+│   ├── search.md              # 4 search tools
+│   ├── admin_settings.md      # 11 admin tools
+│   ├── tasks.md               # 6 task tools
+│   ├── disk_sync.md           # 5 sync tools
+│   └── database.md            # 1 query tool
+├── plugin_manager/             # Plugin Manager system
+├── architecture/               # System internals
+└── best_practices/             # Development guidelines
+```
 
 ## Testing
 
