@@ -1,0 +1,1469 @@
+"""Main manager for plugin and theme creation workflows.
+
+This module orchestrates the complete workflow for creating plugins and themes,
+integrating workspace creation, PHP/CSS scaffolding, database registration, and MCP tools.
+"""
+
+from pathlib import Path
+from typing import Dict, Any, Optional, List
+from datetime import datetime
+import shutil
+
+from .config import Config
+from .database import ProjectDatabase
+from .workspace import PluginWorkspace, ThemeWorkspace
+from .installer import PluginInstaller, ThemeInstaller
+from .schema import (
+    create_default_plugin_meta,
+    create_default_theme_meta,
+    validate_meta
+)
+from .mcp_client import (
+    call_create_plugin,
+    MCPClientError,
+    validate_parent_theme
+)
+from .packager import PluginPackager, ThemePackager
+
+
+# Plugin PHP template (based on mybb_mcp/tools/plugins.py PLUGIN_TEMPLATE)
+PLUGIN_TEMPLATE = '''<?php
+/**
+ * {plugin_name}
+ * {description}
+ *
+ * @author {author}
+ * @version {version}
+ */
+
+// Prevent direct access
+if(!defined('IN_MYBB'))
+{{
+    die('This file cannot be accessed directly.');
+}}
+
+{template_caching}
+
+{hooks}
+
+/**
+ * Plugin information
+ */
+function {codename}_info()
+{{
+    return array(
+        'name'          => '{plugin_name}',
+        'description'   => '{description}',
+        'website'       => '',
+        'author'        => '{author}',
+        'authorsite'    => '',
+        'version'       => '{version}',
+        'compatibility' => '{compatibility}',
+        'codename'      => '{codename}'
+    );
+}}
+
+/**
+ * Plugin activation
+ */
+function {codename}_activate()
+{{
+    global $db;
+
+{activate_code}
+}}
+
+/**
+ * Plugin deactivation
+ */
+function {codename}_deactivate()
+{{
+    global $db;
+
+{deactivate_code}
+}}
+
+/**
+ * Check if plugin is installed
+ */
+function {codename}_is_installed()
+{{
+    global $db;
+    {is_installed_check}
+}}
+
+/**
+ * Plugin installation
+ */
+function {codename}_install()
+{{
+    global $db;
+
+{install_code}
+}}
+
+/**
+ * Plugin uninstallation
+ */
+function {codename}_uninstall()
+{{
+    global $db;
+
+{uninstall_code}
+}}
+
+{hook_functions}
+'''
+
+
+LANG_TEMPLATE = '''<?php
+/**
+ * {plugin_name} - Language File
+ */
+
+$l['{codename}_name'] = '{plugin_name}';
+$l['{codename}_desc'] = '{description}';
+
+// Add your language strings below
+'''
+
+
+README_PLUGIN_TEMPLATE = '''# {display_name}
+
+{description}
+
+## Information
+
+- **Codename:** {codename}
+- **Version:** {version}
+- **Author:** {author}
+- **Compatibility:** MyBB {compatibility}
+- **Type:** {type}
+- **Visibility:** {visibility}
+
+## Installation
+
+1. Copy contents of `inc/` to your MyBB installation's `inc/` directory
+2. Go to Admin CP > Configuration > Plugins
+3. Find "{display_name}" and click Install
+4. Configure settings as needed
+
+## Files
+
+- `inc/plugins/{codename}.php` - Main plugin file
+- `inc/languages/english/{codename}.lang.php` - Language strings
+{templates_line}
+
+## Development
+
+This plugin is managed by the Plugin Theme Manager workspace.
+Workspace structure mirrors MyBB directory layout for easy deployment.
+
+- **Created:** {created_at}
+- **Workspace:** `{workspace_path}`
+
+## License
+
+All rights reserved.
+'''
+
+
+README_THEME_TEMPLATE = '''# {display_name}
+
+{description}
+
+## Information
+
+- **Codename:** {codename}
+- **Version:** {version}
+- **Author:** {author}
+- **Compatibility:** MyBB {compatibility}
+- **Type:** Theme
+- **Visibility:** {visibility}
+{parent_line}
+
+## Stylesheets
+
+{stylesheet_list}
+
+## Installation
+
+1. Copy theme files to your MyBB installation
+2. Go to Admin CP > Templates & Style > Themes
+3. Import or activate the theme
+4. Configure theme settings as needed
+
+## Development
+
+This theme is managed by the Plugin Theme Manager workspace.
+
+- **Created:** {created_at}
+- **Workspace:** `{workspace_path}`
+
+## License
+
+All rights reserved.
+'''
+
+
+class PluginManager:
+    """Main manager for plugin and theme creation and management."""
+
+    def __init__(self, config: Optional[Config] = None):
+        """Initialize plugin manager.
+
+        Args:
+            config: Optional Config object (creates default if None)
+        """
+        self.config = config or Config()
+        self.db = ProjectDatabase(self.config.database_path)
+
+        # Initialize workspaces
+        plugin_workspace_root = self.config.get_workspace_path('plugin')
+        theme_workspace_root = self.config.get_workspace_path('theme')
+
+        self.plugin_workspace = PluginWorkspace(plugin_workspace_root)
+        self.theme_workspace = ThemeWorkspace(theme_workspace_root)
+
+    def create_plugin(
+        self,
+        codename: str,
+        display_name: str,
+        description: str = "",
+        author: Optional[str] = None,
+        version: str = "1.0.0",
+        visibility: str = "public",
+        hooks: Optional[List[Dict[str, str]]] = None,
+        settings: Optional[List[Dict[str, Any]]] = None,
+        has_templates: bool = False,
+        has_database: bool = False,
+        mybb_compatibility: str = "18*"
+    ) -> Dict[str, Any]:
+        """Create a new plugin with full workspace and registration.
+
+        Args:
+            codename: Plugin codename (lowercase, underscores)
+            display_name: Human-readable plugin name
+            description: Plugin description
+            author: Author name (uses config default if None)
+            version: Version string
+            visibility: "public" or "private"
+            hooks: List of hook dictionaries with 'name' key
+            settings: List of setting dictionaries
+            has_templates: Whether plugin uses templates
+            has_database: Whether plugin uses database tables
+            mybb_compatibility: MyBB version compatibility (e.g., "18*")
+
+        Returns:
+            Dictionary with success status, message, workspace_path, project_id
+
+        Raises:
+            ValueError: If validation fails or workspace exists
+        """
+        author = author or self.config.default_author
+        hooks = hooks or []
+        settings = settings or []
+        hook_names = [h.get('name', h) if isinstance(h, dict) else h for h in hooks]
+
+        # Create workspace directory
+        workspace_path = self.plugin_workspace.create_workspace(codename, visibility)
+
+        try:
+            # Generate meta.json
+            meta = create_default_plugin_meta(
+                codename=codename,
+                display_name=display_name,
+                author=author,
+                version=version,
+                description=description,
+                mybb_compatibility=mybb_compatibility,
+                visibility=visibility
+            )
+
+            # Add hooks and settings to meta (hooks must be objects with 'name', 'handler', and 'priority' fields)
+            meta['hooks'] = [{"name": h, "handler": f"{codename}_{h}", "priority": 10} for h in hook_names]
+            meta['settings'] = settings
+            meta['has_templates'] = has_templates
+            meta['has_database'] = has_database
+
+            # Write meta.json
+            self.plugin_workspace.write_meta(codename, meta, visibility)
+
+            # Generate PHP scaffold
+            php_content = self._scaffold_plugin_php(
+                codename=codename,
+                plugin_name=display_name,
+                description=description,
+                author=author,
+                version=version,
+                hooks=hook_names,
+                has_settings=bool(settings),
+                has_templates=has_templates,
+                has_database=has_database,
+                compatibility=mybb_compatibility
+            )
+
+            # Write PHP file (MyBB-compatible path)
+            php_path = workspace_path / "inc" / "plugins" / f"{codename}.php"
+            php_path.write_text(php_content, encoding='utf-8')
+
+            # Generate language file (MyBB-compatible path)
+            lang_content = LANG_TEMPLATE.format(
+                plugin_name=display_name,
+                codename=codename,
+                description=description
+            )
+            lang_path = workspace_path / "inc" / "languages" / "english" / f"{codename}.lang.php"
+            lang_path.write_text(lang_content, encoding='utf-8')
+
+            # Generate README
+            readme_content = self._generate_plugin_readme(
+                codename=codename,
+                display_name=display_name,
+                description=description,
+                author=author,
+                version=version,
+                visibility=visibility,
+                compatibility=mybb_compatibility,
+                workspace_path=str(workspace_path),
+                has_templates=has_templates
+            )
+            readme_path = workspace_path / "README.md"
+            readme_path.write_text(readme_content, encoding='utf-8')
+
+            # Register in database (database automatically creates history entry)
+            project_id = self.db.add_project(
+                codename=codename,
+                display_name=display_name,
+                workspace_path=str(workspace_path),
+                type='plugin',
+                visibility=visibility,
+                status='development',
+                version=version,
+                description=description,
+                author=author,
+                mybb_compatibility=mybb_compatibility
+            )
+
+            return {
+                "success": True,
+                "message": f"Plugin '{display_name}' created successfully",
+                "workspace_path": str(workspace_path),
+                "project_id": project_id,
+                "codename": codename,
+                "files_created": [
+                    str(php_path),
+                    str(lang_path),
+                    str(readme_path),
+                    str(workspace_path / "meta.json")
+                ],
+                "next_steps": [
+                    f"1. Edit PHP code in {php_path}",
+                    f"2. Add language strings to {lang_path}",
+                    "3. Use 'install' workflow to deploy to TestForum",
+                    "4. Activate plugin in MyBB Admin CP"
+                ]
+            }
+
+        except Exception as e:
+            # Cleanup on failure
+            if workspace_path.exists():
+                shutil.rmtree(workspace_path)
+            raise ValueError(f"Plugin creation failed: {str(e)}") from e
+
+    def create_theme(
+        self,
+        codename: str,
+        display_name: str,
+        description: str = "",
+        author: Optional[str] = None,
+        version: str = "1.0.0",
+        visibility: str = "public",
+        parent_theme: Optional[str] = None,
+        color_scheme: Optional[Dict[str, str]] = None,
+        stylesheets: Optional[List[str]] = None,
+        template_overrides: Optional[List[str]] = None,
+        mybb_compatibility: str = "18*"
+    ) -> Dict[str, Any]:
+        """Create a new theme with full workspace and registration.
+
+        Args:
+            codename: Theme codename (lowercase, underscores)
+            display_name: Human-readable theme name
+            description: Theme description
+            author: Author name (uses config default if None)
+            version: Version string
+            visibility: "public" or "private"
+            parent_theme: Optional parent theme name for inheritance
+            color_scheme: Optional color variables dictionary
+            stylesheets: List of stylesheet names to create (defaults to ["global.css"])
+            template_overrides: List of template names to override
+            mybb_compatibility: MyBB version compatibility
+
+        Returns:
+            Dictionary with success status, message, workspace_path, project_id
+
+        Raises:
+            ValueError: If validation fails or workspace exists
+        """
+        author = author or self.config.default_author
+        stylesheets = stylesheets or ["global.css"]
+        template_overrides = template_overrides or []
+        color_scheme = color_scheme or {}
+
+        # Validate parent theme if specified
+        if parent_theme and not validate_parent_theme(parent_theme):
+            raise ValueError(f"Parent theme not found: {parent_theme}")
+
+        # Create workspace directory
+        workspace_path = self.theme_workspace.create_workspace(codename, visibility)
+
+        try:
+            # Generate meta.json
+            meta = create_default_theme_meta(
+                codename=codename,
+                display_name=display_name,
+                author=author,
+                version=version,
+                description=description,
+                mybb_compatibility=mybb_compatibility,
+                visibility=visibility,
+                parent_theme=parent_theme
+            )
+
+            # Add theme-specific fields (stylesheets must be objects with 'name' and 'attached_to' fields)
+            meta['stylesheets'] = [{"name": s, "attached_to": ["global"]} for s in stylesheets]
+            meta['template_overrides'] = template_overrides
+            meta['color_scheme'] = color_scheme
+
+            # Write meta.json
+            self.theme_workspace.write_meta(codename, meta, visibility)
+
+            # Generate CSS files
+            css_files_created = []
+            for stylesheet_name in stylesheets:
+                css_content = self.theme_workspace.scaffold_stylesheet(
+                    name=stylesheet_name,
+                    parent_theme=parent_theme
+                )
+                # Ensure .css extension
+                css_filename = stylesheet_name if stylesheet_name.endswith('.css') else f"{stylesheet_name}.css"
+                css_path = workspace_path / "stylesheets" / css_filename
+                css_path.write_text(css_content, encoding='utf-8')
+                css_files_created.append(str(css_path))
+
+            # Generate README
+            readme_content = self._generate_theme_readme(
+                codename=codename,
+                display_name=display_name,
+                description=description,
+                author=author,
+                version=version,
+                visibility=visibility,
+                compatibility=mybb_compatibility,
+                parent_theme=parent_theme,
+                stylesheets=stylesheets,
+                workspace_path=str(workspace_path)
+            )
+            readme_path = workspace_path / "README.md"
+            readme_path.write_text(readme_content, encoding='utf-8')
+
+            # Register in database (database automatically creates history entry)
+            project_id = self.db.add_project(
+                codename=codename,
+                display_name=display_name,
+                workspace_path=str(workspace_path),
+                type='theme',
+                visibility=visibility,
+                status='development',
+                version=version,
+                description=description,
+                author=author,
+                mybb_compatibility=mybb_compatibility
+            )
+
+            return {
+                "success": True,
+                "message": f"Theme '{display_name}' created successfully",
+                "workspace_path": str(workspace_path),
+                "project_id": project_id,
+                "codename": codename,
+                "files_created": css_files_created + [
+                    str(readme_path),
+                    str(workspace_path / "meta.json")
+                ],
+                "next_steps": [
+                    f"1. Edit CSS in stylesheets/ directory",
+                    "2. Add template overrides to templates/ directory",
+                    "3. Add images to images/ directory",
+                    "4. Use 'install' workflow to deploy to TestForum"
+                ]
+            }
+
+        except Exception as e:
+            # Cleanup on failure
+            if workspace_path.exists():
+                shutil.rmtree(workspace_path)
+            raise ValueError(f"Theme creation failed: {str(e)}") from e
+
+    def _scaffold_plugin_php(
+        self,
+        codename: str,
+        plugin_name: str,
+        description: str,
+        author: str,
+        version: str,
+        hooks: List[str],
+        has_settings: bool,
+        has_templates: bool,
+        has_database: bool,
+        compatibility: str
+    ) -> str:
+        """Generate PHP scaffold for plugin.
+
+        Args:
+            codename: Plugin codename
+            plugin_name: Display name
+            description: Description
+            author: Author name
+            version: Version string
+            hooks: List of hook names
+            has_settings: Whether plugin has settings
+            has_templates: Whether plugin has templates
+            has_database: Whether plugin has database tables
+            compatibility: MyBB compatibility string
+
+        Returns:
+            Generated PHP code as string
+        """
+        # Generate hook registrations
+        hook_lines = []
+        hook_functions = []
+
+        for hook in hooks:
+            hook_lines.append(f"$plugins->add_hook('{hook}', '{codename}_{hook}');")
+            hook_functions.append(f'''
+/**
+ * Hook: {hook}
+ */
+function {codename}_{hook}(&$args)
+{{
+    global $mybb, $db, $templates, $lang;
+
+    // Your hook code here
+
+    // For form submissions, verify CSRF token:
+    // verify_post_check($mybb->get_input('my_post_key'));
+}}
+''')
+
+        hooks_code = "\n".join(hook_lines) if hook_lines else "// No hooks registered"
+        hook_funcs_code = "\n".join(hook_functions) if hook_functions else ""
+
+        # Template caching
+        template_cache = ""
+        if has_templates:
+            template_cache = f'''// Cache templates
+if(defined('THIS_SCRIPT'))
+{{
+    global $templatelist;
+    if(isset($templatelist))
+    {{
+        $templatelist .= ',';
+    }}
+    $templatelist .= '{codename}_main';
+}}'''
+
+        # Activation code
+        activate_code = "    // Nothing to activate"
+        if has_templates:
+            activate_code = f'''    // Templates are added during installation'''
+
+        # Deactivation code
+        deactivate_code = "    // Nothing to deactivate"
+
+        # Install code
+        install_parts = []
+        if has_settings:
+            install_parts.append(f'''    // Add settings group
+    $group = array(
+        'name' => '{codename}',
+        'title' => '{plugin_name}',
+        'description' => '{description}',
+        'disporder' => 100,
+        'isdefault' => 0
+    );
+    $gid = $db->insert_query('settinggroups', $group);
+
+    // Add settings
+    $setting = array(
+        'name' => '{codename}_enabled',
+        'title' => 'Enable {plugin_name}',
+        'description' => 'Enable or disable this plugin.',
+        'optionscode' => 'yesno',
+        'value' => '1',
+        'disporder' => 1,
+        'gid' => $gid
+    );
+    $db->insert_query('settings', $setting);
+
+    rebuild_settings();''')
+
+        if has_database:
+            install_parts.append(f'''    // Create database table
+    $collation = $db->build_create_table_collation();
+
+    if(!$db->table_exists('{codename}_data')) {{
+        $db->write_query("CREATE TABLE ".TABLE_PREFIX."{codename}_data (
+            id int unsigned NOT NULL auto_increment,
+            uid int unsigned NOT NULL default 0,
+            data text,
+            dateline int unsigned NOT NULL default 0,
+            PRIMARY KEY (id)
+        ) ENGINE=MyISAM{{$collation}};");
+    }}''')
+
+        install_code = "\n".join(install_parts) if install_parts else "    // Nothing to install"
+
+        # Uninstall code
+        uninstall_parts = []
+        if has_templates:
+            uninstall_parts.append(f"    $db->delete_query('templates', \"title LIKE '{codename}%'\");")
+        if has_settings:
+            uninstall_parts.append(f"    $db->delete_query('settinggroups', \"name='{codename}'\");")
+            uninstall_parts.append(f"    $db->delete_query('settings', \"name LIKE '{codename}%'\");")
+            uninstall_parts.append("    rebuild_settings();")
+        if has_database:
+            uninstall_parts.append(f"    $db->drop_table('{codename}_data');")
+
+        uninstall_code = "\n".join(uninstall_parts) if uninstall_parts else "    // Nothing to uninstall"
+
+        # Is installed check
+        if has_database:
+            is_installed = f"return $db->table_exists('{codename}_data');"
+        elif has_settings:
+            is_installed = f"$query = $db->simple_select('settinggroups', 'gid', \"name='{codename}'\");\n    return (bool)$db->num_rows($query);"
+        else:
+            is_installed = "return false; // No installation required"
+
+        # Generate final PHP
+        return PLUGIN_TEMPLATE.format(
+            codename=codename,
+            plugin_name=plugin_name,
+            description=description,
+            author=author,
+            version=version,
+            compatibility=compatibility,
+            template_caching=template_cache,
+            hooks=hooks_code,
+            activate_code=activate_code,
+            deactivate_code=deactivate_code,
+            install_code=install_code,
+            uninstall_code=uninstall_code,
+            is_installed_check=is_installed,
+            hook_functions=hook_funcs_code
+        )
+
+    def _generate_plugin_readme(
+        self,
+        codename: str,
+        display_name: str,
+        description: str,
+        author: str,
+        version: str,
+        visibility: str,
+        compatibility: str,
+        workspace_path: str,
+        has_templates: bool
+    ) -> str:
+        """Generate README.md for plugin."""
+        templates_line = "" if not has_templates else "\n- Templates are stored in database (use MCP tools to manage)"
+
+        return README_PLUGIN_TEMPLATE.format(
+            codename=codename,
+            display_name=display_name,
+            description=description or "No description provided.",
+            author=author,
+            version=version,
+            visibility=visibility,
+            compatibility=compatibility,
+            type="plugin",
+            templates_line=templates_line,
+            created_at=datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            workspace_path=workspace_path
+        )
+
+    def _generate_theme_readme(
+        self,
+        codename: str,
+        display_name: str,
+        description: str,
+        author: str,
+        version: str,
+        visibility: str,
+        compatibility: str,
+        parent_theme: Optional[str],
+        stylesheets: List[str],
+        workspace_path: str
+    ) -> str:
+        """Generate README.md for theme."""
+        parent_line = f"\n- **Parent Theme:** {parent_theme}" if parent_theme else ""
+        stylesheet_list = "\n".join([f"- `{s}`" for s in stylesheets])
+
+        return README_THEME_TEMPLATE.format(
+            codename=codename,
+            display_name=display_name,
+            description=description or "No description provided.",
+            author=author,
+            version=version,
+            visibility=visibility,
+            compatibility=compatibility,
+            parent_line=parent_line,
+            stylesheet_list=stylesheet_list,
+            created_at=datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            workspace_path=workspace_path
+        )
+
+    def install_plugin(self, codename: str, visibility: Optional[str] = None) -> Dict[str, Any]:
+        """Install plugin to TestForum.
+
+        Args:
+            codename: Plugin codename
+            visibility: 'public' or 'private' (uses default if None)
+
+        Returns:
+            Dict with installation status and details
+        """
+        installer = PluginInstaller(self.config, self.db, self.plugin_workspace)
+        return installer.install_plugin(codename, visibility)
+
+    def uninstall_plugin(self, codename: str, visibility: Optional[str] = None) -> Dict[str, Any]:
+        """Uninstall plugin from TestForum.
+
+        Args:
+            codename: Plugin codename
+            visibility: 'public' or 'private' (uses default if None)
+
+        Returns:
+            Dict with uninstallation status and details
+        """
+        installer = PluginInstaller(self.config, self.db, self.plugin_workspace)
+        return installer.uninstall_plugin(codename, visibility)
+
+    def install_theme(self, codename: str, visibility: Optional[str] = None) -> Dict[str, Any]:
+        """Install theme to TestForum.
+
+        Args:
+            codename: Theme codename
+            visibility: 'public' or 'private' (uses default if None)
+
+        Returns:
+            Dict with installation status and details
+        """
+        installer = ThemeInstaller(self.config, self.db, self.theme_workspace)
+        return installer.install_theme(codename, visibility)
+
+    def uninstall_theme(self, codename: str, visibility: Optional[str] = None) -> Dict[str, Any]:
+        """Uninstall theme from TestForum.
+
+        Args:
+            codename: Theme codename
+            visibility: 'public' or 'private' (uses default if None)
+
+        Returns:
+            Dict with uninstallation status and details
+        """
+        installer = ThemeInstaller(self.config, self.db, self.theme_workspace)
+        return installer.uninstall_theme(codename, visibility)
+
+    def get_installed_plugins(self) -> List[str]:
+        """List plugins currently installed in TestForum.
+
+        Returns:
+            List of installed plugin codenames
+        """
+        installer = PluginInstaller(self.config, self.db, self.plugin_workspace)
+        return installer.get_installed_plugins()
+
+    # -------------------------------------------------------------------------
+    # Full Lifecycle Methods (Phase 7 - PHP Lifecycle Execution)
+    # -------------------------------------------------------------------------
+
+    def _get_lifecycle(self):
+        """Get or create the PluginLifecycle instance.
+
+        Returns:
+            PluginLifecycle instance configured for this MyBB installation
+        """
+        from .lifecycle import PluginLifecycle
+        return PluginLifecycle(self.config.mybb_root)
+
+    def activate_full(
+        self,
+        codename: str,
+        visibility: Optional[str] = None,
+        force: bool = False
+    ) -> Dict[str, Any]:
+        """Full plugin activation: deploy files + execute PHP lifecycle.
+
+        This method:
+        1. Deploys plugin files from workspace to TestForum (if workspace plugin)
+        2. Executes PHP _install() function (if not installed)
+        3. Executes PHP _activate() function
+        4. Updates MyBB plugin cache
+
+        Args:
+            codename: Plugin codename
+            visibility: 'public' or 'private' (uses default if None)
+            force: Skip compatibility check
+
+        Returns:
+            Dict with:
+            - success: bool
+            - files_deployed: list of files copied
+            - php_lifecycle: result from PHP bridge
+            - warnings: list of warnings
+        """
+        result = {
+            "success": False,
+            "codename": codename,
+            "files_deployed": [],
+            "php_lifecycle": None,
+            "warnings": []
+        }
+
+        # Step 1: Check if this is a workspace plugin and deploy files
+        project = self.db.get_project(codename)
+        if project and project.get('type') == 'plugin':
+            visibility = visibility or project.get('visibility', 'public')
+            install_result = self.install_plugin(codename, visibility)
+
+            if not install_result.get("success"):
+                result["error"] = install_result.get("error", "File deployment failed")
+                return result
+
+            result["files_deployed"] = install_result.get("files_deployed", [])
+            result["workspace_path"] = install_result.get("workspace_path")
+            result["file_count"] = install_result.get("file_count", 0)
+            result["dir_count"] = install_result.get("dir_count", 0)
+            result["total_size"] = install_result.get("total_size", 0)
+            result["deployed_at"] = install_result.get("deployed_at")
+
+            # Remove the ACP warning from install - we're doing full activation
+            result["warnings"] = [
+                w for w in install_result.get("warnings", [])
+                if "IMPORTANT" not in w
+            ]
+
+        # Step 2: Execute PHP lifecycle via bridge
+        try:
+            lifecycle = self._get_lifecycle()
+            php_result = lifecycle.activate(codename, force=force)
+
+            result["php_lifecycle"] = {
+                "success": php_result.success,
+                "actions_taken": php_result.data.get("actions_taken", []),
+                "error": php_result.error
+            }
+
+            if not php_result.success:
+                result["error"] = php_result.error or "PHP lifecycle activation failed"
+                return result
+
+        except FileNotFoundError as e:
+            result["error"] = str(e)
+            result["warnings"].append(
+                "MCP Bridge not found. Ensure mcp_bridge.php is installed in TestForum."
+            )
+            return result
+        except Exception as e:
+            result["error"] = f"PHP lifecycle error: {str(e)}"
+            return result
+
+        # Step 3: Update database status
+        if project:
+            try:
+                self.db.update_project(
+                    codename=codename,
+                    status="active",
+                    installed_at=datetime.utcnow().isoformat()
+                )
+                self.db.add_history(
+                    project_id=project['id'],
+                    action="activated",
+                    details=f"Full activation via PHP bridge. Actions: {', '.join(php_result.data.get('actions_taken', []))}"
+                )
+            except Exception as e:
+                result["warnings"].append(f"Database update failed: {str(e)}")
+
+        result["success"] = True
+        return result
+
+    def deactivate_full(
+        self,
+        codename: str,
+        uninstall: bool = False,
+        remove_files: bool = False,
+        visibility: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Full plugin deactivation: execute PHP lifecycle + optionally remove files.
+
+        This method:
+        1. Executes PHP _deactivate() function
+        2. Optionally executes PHP _uninstall() function
+        3. Updates MyBB plugin cache
+        4. Optionally removes plugin files from TestForum
+
+        Args:
+            codename: Plugin codename
+            uninstall: Also run _uninstall() function
+            remove_files: Also remove files from TestForum
+            visibility: 'public' or 'private' (uses default if None)
+
+        Returns:
+            Dict with:
+            - success: bool
+            - php_lifecycle: result from PHP bridge
+            - files_removed: list of files removed (if remove_files=True)
+            - warnings: list of warnings
+        """
+        result = {
+            "success": False,
+            "codename": codename,
+            "php_lifecycle": None,
+            "files_removed": [],
+            "warnings": []
+        }
+
+        # Step 1: Execute PHP lifecycle via bridge
+        try:
+            lifecycle = self._get_lifecycle()
+            php_result = lifecycle.deactivate(codename, uninstall=uninstall)
+
+            result["php_lifecycle"] = {
+                "success": php_result.success,
+                "actions_taken": php_result.data.get("actions_taken", []),
+                "uninstalled": php_result.data.get("uninstalled", False),
+                "error": php_result.error
+            }
+
+            if not php_result.success:
+                result["error"] = php_result.error or "PHP lifecycle deactivation failed"
+                return result
+
+        except FileNotFoundError as e:
+            result["error"] = str(e)
+            result["warnings"].append(
+                "MCP Bridge not found. Ensure mcp_bridge.php is installed in TestForum."
+            )
+            return result
+        except Exception as e:
+            result["error"] = f"PHP lifecycle error: {str(e)}"
+            return result
+
+        # Step 2: Remove files if requested
+        project = self.db.get_project(codename)
+        if remove_files:
+            if project and project.get('type') == 'plugin':
+                visibility = visibility or project.get('visibility', 'public')
+                uninstall_result = self.uninstall_plugin(codename, visibility)
+                result["files_removed"] = uninstall_result.get("files_removed", [])
+                if uninstall_result.get("warnings"):
+                    result["warnings"].extend(uninstall_result["warnings"])
+            else:
+                # Remove just the plugin file for non-workspace plugins
+                plugin_file = self.config.mybb_root / "inc" / "plugins" / f"{codename}.php"
+                if plugin_file.exists():
+                    plugin_file.unlink()
+                    result["files_removed"].append(str(plugin_file))
+
+        # Step 3: Update database status
+        if project:
+            try:
+                new_status = "development" if remove_files else "installed"
+                self.db.update_project(
+                    codename=codename,
+                    status=new_status
+                )
+                if remove_files:
+                    self.db.conn.execute(
+                        "UPDATE projects SET installed_at = NULL WHERE codename = ?",
+                        (codename,)
+                    )
+                    self.db.conn.commit()
+
+                action_desc = "deactivated"
+                if uninstall:
+                    action_desc = "uninstalled"
+                if remove_files:
+                    action_desc += " and files removed"
+
+                self.db.add_history(
+                    project_id=project['id'],
+                    action=action_desc,
+                    details=f"Actions: {', '.join(php_result.data.get('actions_taken', []))}"
+                )
+            except Exception as e:
+                result["warnings"].append(f"Database update failed: {str(e)}")
+
+        result["success"] = True
+        return result
+
+    def get_plugin_status(self, codename: str) -> Dict[str, Any]:
+        """Get comprehensive plugin status from MyBB via PHP bridge.
+
+        Args:
+            codename: Plugin codename
+
+        Returns:
+            Dict with plugin info, installation status, activation status
+        """
+        try:
+            lifecycle = self._get_lifecycle()
+            result = lifecycle.get_status(codename)
+
+            if result.success:
+                return {
+                    "success": True,
+                    "codename": codename,
+                    **result.data
+                }
+            else:
+                return {
+                    "success": False,
+                    "codename": codename,
+                    "error": result.error
+                }
+        except Exception as e:
+            return {
+                "success": False,
+                "codename": codename,
+                "error": str(e)
+            }
+
+    # -------------------------------------------------------------------------
+    # Sync Workflow Methods (Phase 4 - Using Extended DiskSyncService)
+    # -------------------------------------------------------------------------
+
+    def _get_sync_service(self):
+        """Get or create the DiskSyncService instance.
+
+        Uses the extended DiskSyncService from mybb_mcp with workspace support.
+
+        Returns:
+            DiskSyncService instance configured for plugin_manager workspace
+        """
+        # Lazy import to avoid circular dependencies
+        # Add mybb_mcp to path if needed (handles different execution contexts)
+        import sys
+        mybb_mcp_path = Path(__file__).parent.parent / "mybb_mcp"
+        if str(mybb_mcp_path) not in sys.path:
+            sys.path.insert(0, str(mybb_mcp_path))
+
+        from mybb_mcp.sync.service import DiskSyncService
+        from mybb_mcp.sync.config import SyncConfig
+        from mybb_mcp.db import MyBBDatabase
+
+        # Create MyBB database connection
+        mybb_db = MyBBDatabase({
+            'host': self.config.mybb_db_host,
+            'name': self.config.mybb_db_name,
+            'user': self.config.mybb_db_user,
+            'password': self.config.mybb_db_password,
+            'prefix': self.config.mybb_db_prefix
+        })
+
+        # Create sync config
+        sync_config = SyncConfig(sync_root=self.config.sync_root)
+
+        # Workspace root is parent of plugins/ and themes/ directories
+        workspace_root = self.config.get_workspace_path('plugin').parent
+
+        return DiskSyncService(
+            db=mybb_db,
+            config=sync_config,
+            mybb_url=self.config.mybb_url,
+            workspace_root=workspace_root,
+            mybb_root=self.config.mybb_root
+        )
+
+    def sync_plugin(
+        self,
+        codename: str,
+        visibility: Optional[str] = None,
+        direction: str = 'to_db'
+    ) -> Dict[str, Any]:
+        """Sync plugin files between workspace and TestForum/database.
+
+        For direction='to_db':
+        - Copy changed PHP files to TestForum
+        - Copy changed language files to TestForum
+        - Sync templates to database
+
+        For direction='from_db':
+        - Export templates from database to workspace
+
+        Args:
+            codename: Plugin codename
+            visibility: 'public' or 'private' (auto-detected if None)
+            direction: 'to_db' (workspace -> MyBB) or 'from_db' (MyBB -> workspace)
+
+        Returns:
+            Dict with sync results including files_synced, templates_synced, warnings
+        """
+        # Find workspace path
+        workspace_path = self.plugin_workspace.get_workspace_path(codename, visibility)
+        if not workspace_path:
+            return {
+                "success": False,
+                "error": f"Plugin workspace not found: {codename}",
+                "plugin": codename
+            }
+
+        # Determine actual visibility from path
+        actual_visibility = 'private' if 'private' in str(workspace_path) else 'public'
+
+        # Delegate to extended DiskSyncService
+        sync_service = self._get_sync_service()
+        result = sync_service.sync_plugin(
+            codename=codename,
+            workspace_path=workspace_path,
+            visibility=actual_visibility,
+            direction=direction
+        )
+
+        # Log to project history
+        project = self.db.get_project(codename)
+        if project and result.get("success"):
+            self.db.add_history(
+                project_id=project['id'],
+                action="synced",
+                details=f"Direction: {direction}, Files: {len(result.get('files_synced', []))}, Templates: {len(result.get('templates_synced', []))}"
+            )
+
+        return result
+
+    def sync_theme(
+        self,
+        codename: str,
+        visibility: Optional[str] = None,
+        direction: str = 'to_db',
+        theme_tid: int = 1,
+        template_set_sid: int = 1
+    ) -> Dict[str, Any]:
+        """Sync theme files between workspace and database.
+
+        For direction='to_db':
+        - Sync stylesheets to database
+        - Sync template overrides to database
+
+        For direction='from_db':
+        - Export stylesheets from database to workspace
+        - Export template overrides from database to workspace
+
+        Args:
+            codename: Theme codename
+            visibility: 'public' or 'private' (auto-detected if None)
+            direction: 'to_db' (workspace -> MyBB) or 'from_db' (MyBB -> workspace)
+            theme_tid: Theme ID in MyBB (default 1 = Default)
+            template_set_sid: Template set ID (default 1 = Default Templates)
+
+        Returns:
+            Dict with sync results including stylesheets_synced, templates_synced, warnings
+        """
+        # Find workspace path
+        workspace_path = self.theme_workspace.get_workspace_path(codename, visibility)
+        if not workspace_path:
+            return {
+                "success": False,
+                "error": f"Theme workspace not found: {codename}",
+                "theme": codename
+            }
+
+        # Determine actual visibility from path
+        actual_visibility = 'private' if 'private' in str(workspace_path) else 'public'
+
+        # Delegate to extended DiskSyncService
+        sync_service = self._get_sync_service()
+        result = sync_service.sync_theme(
+            codename=codename,
+            workspace_path=workspace_path,
+            visibility=actual_visibility,
+            direction=direction,
+            theme_tid=theme_tid,
+            template_set_sid=template_set_sid
+        )
+
+        # Log to project history
+        project = self.db.get_project(codename)
+        if project and result.get("success"):
+            self.db.add_history(
+                project_id=project['id'],
+                action="synced",
+                details=f"Direction: {direction}, Stylesheets: {len(result.get('stylesheets_synced', []))}, Templates: {len(result.get('templates_synced', []))}"
+            )
+
+        return result
+
+    def start_watcher(self) -> Dict[str, Any]:
+        """Start the file watcher for automatic sync.
+
+        Monitors the plugin_manager workspace for file changes and automatically
+        syncs templates and stylesheets to the database.
+
+        Returns:
+            Dict with status and workspace_root
+        """
+        sync_service = self._get_sync_service()
+        started = sync_service.start_watcher()
+        workspace_root = self.config.get_workspace_path('plugin').parent
+
+        return {
+            "success": started,
+            "message": "Watcher started" if started else "Watcher already running or failed to start",
+            "workspace_root": str(workspace_root)
+        }
+
+    def stop_watcher(self) -> Dict[str, Any]:
+        """Stop the file watcher.
+
+        Returns:
+            Dict with status
+        """
+        sync_service = self._get_sync_service()
+        stopped = sync_service.stop_watcher()
+
+        return {
+            "success": stopped,
+            "message": "Watcher stopped" if stopped else "Watcher not running"
+        }
+
+    def get_watcher_status(self) -> Dict[str, Any]:
+        """Get current watcher status.
+
+        Returns:
+            Dict with running state and workspace info
+        """
+        sync_service = self._get_sync_service()
+        return sync_service.get_status()
+
+    # ==================== Export Workflow Methods ====================
+
+    def export_plugin(
+        self,
+        codename: str,
+        output_dir: Optional[Path] = None,
+        visibility: Optional[str] = None,
+        include_tests: bool = False
+    ) -> Dict[str, Any]:
+        """Export plugin as distributable ZIP package.
+
+        Args:
+            codename: Plugin codename
+            output_dir: Directory for output ZIP (default: plugin_manager/exports/)
+            visibility: Workspace visibility (public/private/None)
+            include_tests: Include test files in ZIP
+
+        Returns:
+            {
+                "success": bool,
+                "zip_path": str,
+                "files_included": List[str],
+                "validation": Dict,
+                "warnings": List[str]
+            }
+        """
+        # Create packager
+        packager = PluginPackager(self.plugin_workspace, self.db)
+
+        # Validate before export
+        validation = packager.validate_for_export(codename, visibility)
+        if not validation["valid"]:
+            return {
+                "success": False,
+                "errors": validation["errors"],
+                "warnings": validation["warnings"],
+                "zip_path": None
+            }
+
+        # Get workspace path
+        workspace_path = self.plugin_workspace.get_workspace_path(codename, visibility)
+        if not workspace_path:
+            return {
+                "success": False,
+                "errors": [f"Plugin '{codename}' workspace not found"],
+                "zip_path": None
+            }
+
+        # Load meta for version
+        meta = validation["meta"]
+        version = meta.get("version", "1.0.0")
+
+        # Generate README
+        readme_content = packager.generate_readme(codename, meta)
+        readme_path = workspace_path / "README.md"
+        readme_path.write_text(readme_content)
+
+        # Determine output path
+        if output_dir is None:
+            output_dir = self.config.workspace_root / "exports"
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        zip_filename = f"{codename}-{version}.zip"
+        zip_path = output_dir / zip_filename
+
+        # Create ZIP
+        result = packager.create_plugin_zip(
+            codename,
+            zip_path,
+            visibility,
+            include_tests
+        )
+
+        if result["success"]:
+            # Log to history
+            project = self.db.get_project(codename)
+            if project:
+                import json
+                self.db.add_history(
+                    project_id=project['id'],
+                    action="exported",
+                    details=json.dumps({"version": version, "files": result["files_included"]})
+                )
+
+        # Combine validation warnings with ZIP warnings
+        all_warnings = validation["warnings"] + result.get("warnings", [])
+
+        return {
+            "success": result["success"],
+            "zip_path": result.get("zip_path"),
+            "files_included": result.get("files_included", []),
+            "validation": validation,
+            "warnings": all_warnings,
+            "readme_generated": True
+        }
+
+    def export_theme(
+        self,
+        codename: str,
+        output_dir: Optional[Path] = None,
+        visibility: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Export theme as distributable ZIP package.
+
+        Args:
+            codename: Theme codename
+            output_dir: Directory for output ZIP (default: plugin_manager/exports/)
+            visibility: Workspace visibility (public/private/None)
+
+        Returns:
+            {
+                "success": bool,
+                "zip_path": str,
+                "files_included": List[str],
+                "validation": Dict,
+                "warnings": List[str]
+            }
+        """
+        # Create packager
+        packager = ThemePackager(self.theme_workspace, self.db)
+
+        # Validate before export
+        validation = packager.validate_for_export(codename, visibility)
+        if not validation["valid"]:
+            return {
+                "success": False,
+                "errors": validation["errors"],
+                "warnings": validation["warnings"],
+                "zip_path": None
+            }
+
+        # Get workspace path
+        workspace_path = self.theme_workspace.get_workspace_path(codename, visibility)
+        if not workspace_path:
+            return {
+                "success": False,
+                "errors": [f"Theme '{codename}' workspace not found"],
+                "zip_path": None
+            }
+
+        # Load meta for version
+        meta = validation["meta"]
+        version = meta.get("version", "1.0.0")
+
+        # Generate README
+        readme_content = packager.generate_readme(codename, meta)
+        readme_path = workspace_path / "README.md"
+        readme_path.write_text(readme_content)
+
+        # Determine output path
+        if output_dir is None:
+            output_dir = self.config.workspace_root / "exports"
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        zip_filename = f"{codename}-{version}.zip"
+        zip_path = output_dir / zip_filename
+
+        # Create ZIP
+        result = packager.create_theme_zip(
+            codename,
+            zip_path,
+            visibility
+        )
+
+        if result["success"]:
+            # Log to history
+            project = self.db.get_project(codename)
+            if project:
+                import json
+                self.db.add_history(
+                    project_id=project['id'],
+                    action="exported",
+                    details=json.dumps({"version": version, "files": result["files_included"]})
+                )
+
+        # Combine validation warnings with ZIP warnings
+        all_warnings = validation["warnings"] + result.get("warnings", [])
+
+        return {
+            "success": result["success"],
+            "zip_path": result.get("zip_path"),
+            "files_included": result.get("files_included", []),
+            "validation": validation,
+            "warnings": all_warnings,
+            "readme_generated": True
+        }
+
+    def validate_plugin(
+        self,
+        codename: str,
+        visibility: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Validate plugin is ready for export.
+
+        Args:
+            codename: Plugin codename
+            visibility: Workspace visibility
+
+        Returns:
+            Validation result dict
+        """
+        packager = PluginPackager(self.plugin_workspace, self.db)
+        return packager.validate_for_export(codename, visibility)
+
+    def validate_theme(
+        self,
+        codename: str,
+        visibility: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Validate theme is ready for export.
+
+        Args:
+            codename: Theme codename
+            visibility: Workspace visibility
+
+        Returns:
+            Validation result dict
+        """
+        packager = ThemePackager(self.theme_workspace, self.db)
+        return packager.validate_for_export(codename, visibility)
