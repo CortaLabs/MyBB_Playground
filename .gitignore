@@ -179,3 +179,5 @@ docker-compose.override.yml
 coverage/
 .nyc_output/
 test-results/
+
+read_only_code

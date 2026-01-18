@@ -1,0 +1,52 @@
+{
+  "codename": "cortex",
+  "display_name": "Cortex",
+  "version": "1.0.0",
+  "author": "Corta Labs",
+  "description": "Secure template conditionals for MyBB 1.8.x (PHP 8.1+)",
+  "mybb_compatibility": "18*",
+  "visibility": "public",
+  "project_type": "plugin",
+  "hooks": [
+    {
+      "name": "global_start",
+      "handler": "cortex_init",
+      "priority": 5
+    },
+    {
+      "name": "xmlhttp",
+      "handler": "cortex_init",
+      "priority": 5
+    },
+    {
+      "name": "admin_config_plugins_activate_commit",
+      "handler": "cortex_clear_cache",
+      "priority": 10
+    },
+    {
+      "name": "admin_config_plugins_deactivate_commit",
+      "handler": "cortex_clear_cache",
+      "priority": 10
+    },
+    {
+      "name": "admin_style_templates_edit_template_commit",
+      "handler": "cortex_clear_cache",
+      "priority": 10
+    },
+    {
+      "name": "admin_tools_cache_rebuild",
+      "handler": "cortex_clear_cache",
+      "priority": 10
+    }
+  ],
+  "settings": [],
+  "templates": [],
+  "files": {
+    "plugin": "inc/plugins/cortex.php",
+    "languages": "inc/languages/",
+    "jscripts": "jscripts/",
+    "images": "images/"
+  },
+  "has_templates": false,
+  "has_database": false
+}

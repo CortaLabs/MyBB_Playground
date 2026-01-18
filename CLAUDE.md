@@ -10,6 +10,37 @@ AI-assisted MyBB development toolkit providing MCP tools for Claude Code to inte
 - `mybb_sync/` — Template/stylesheet disk sync with live file watching
 - `plugin_manager/` — Plugin/theme workspace with deployment and PHP lifecycle execution
 
+**Notes for the Main Claude Code Orchestrator:**
+- Always try to conserve your context window, delegate fixes and research as needed.  Use the subagents rather than trying to do everything yourself.
+- Always wait for subagents to complete, rather than checking on them.  This is a huge context killer.
+- Append Entry audit notes regularly, as the orchestrator this is a real solid approach to passing context to downstream agents.
+
+## Forbidden Operations
+
+**NEVER use destructive commands without explicit user confirmation:**
+- `rm -rf` is BANNED. Period.
+- `rm -r` requires explicit user approval before execution.
+- Any deletion of directories containing code requires user confirmation.
+- If something "needs to be deleted and recreated", ASK FIRST.
+
+**Before deleting anything:**
+1. State exactly what will be deleted
+2. Explain why deletion is necessary
+3. WAIT for user confirmation
+4. If there's any doubt, don't delete
+
+**Plugin Manager workflow is mandatory:**
+- Use `mybb_create_plugin` to create plugins - never create workspace files directly
+- Use `mybb_plugin_install` to deploy - never copy files to TestForum manually
+- Check if a plugin exists in the system BEFORE assuming it doesn't
+- The correct database is `.plugin_manager/projects.db` at repo root
+
+**When things go wrong:**
+- Don't try to "fix" by deleting and recreating
+- Investigate why the system doesn't recognize something
+- Read the docs (CLAUDE.md, wiki) before assuming infrastructure is broken
+- Ask the user before taking destructive action
+
 ## Development Environment
 
 ### Prerequisites
