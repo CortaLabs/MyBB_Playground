@@ -524,6 +524,17 @@ Comprehensive technical documentation lives in `/docs/wiki/`. Use these for deta
 | **Architecture** | [index](docs/wiki/architecture/index.md) | MCP server internals, disk sync, configuration |
 | **Best Practices** | [index](docs/wiki/best_practices/index.md) | Plugin/theme development patterns, security |
 
+### Complex Plugin Development (IMPORTANT)
+
+For building production-quality plugins with multiple files, JavaScript, AJAX, Admin CP modules, and proper MyBB standards compliance, see the **[Plugin Development Guide](docs/wiki/best_practices/plugin_development.md)**.
+
+**Key sections:**
+- **MyBB Settings vs Config Files** — User-configurable options MUST use MyBB ACP settings, not config files
+- **Complex Plugin Architecture** — Multi-file structure, directory organization, meta.json
+- **JavaScript Integration** — Loading scripts via hooks, AJAX handlers with CSRF protection
+- **Admin CP Modules** — Custom admin pages with proper permissions
+- **Template Groups** — Organizing plugin templates for Admin CP visibility
+
 ### When to Check the Wiki
 
 - **Before implementing a feature** — check if patterns/tools already exist

@@ -4,6 +4,42 @@
 
 ---
 
+## Critical Standards
+
+### ⚠️ MyBB Settings vs Config Files (MANDATORY)
+
+**All user-configurable options MUST use MyBB Admin CP Settings, not config files.**
+
+| Use MyBB Settings For | Use Config Files For |
+|-----------------------|----------------------|
+| Enable/disable features | Advanced/dangerous options only |
+| Numeric limits (cache TTL, max depth) | Functions to whitelist (security risk) |
+| User-facing text/labels | File paths (if truly needed) |
+| Mode selections | Developer-only debugging flags |
+| Any option an admin should change | |
+
+**Why this matters:**
+- MyBB settings are the standard for distributable plugins
+- Admins expect to configure plugins via Admin CP
+- Config files require file access (not always available)
+- Settings integrate with MyBB's caching system
+
+**Pattern: Settings with Config Fallback**
+```php
+// In your handler - ACP settings override, config.php as fallback
+$fileConfig = require MYBB_ROOT . 'inc/plugins/myplugin/config.php';
+
+$enabled = isset($mybb->settings['myplugin_enabled'])
+    ? (bool)$mybb->settings['myplugin_enabled']
+    : ($fileConfig['enabled'] ?? true);
+
+$maxDepth = isset($mybb->settings['myplugin_max_depth'])
+    ? (int)$mybb->settings['myplugin_max_depth']
+    : ($fileConfig['max_depth'] ?? 10);
+```
+
+---
+
 ## Plugin Structure
 
 ### Required Lifecycle Functions
@@ -519,6 +555,540 @@ mybb_plugin_status(codename="myplugin")
 ```
 
 Returns: installation state, activation state, compatibility check.
+
+---
+
+## Complex Plugin Architecture
+
+For plugins with multiple files, classes, JavaScript, and Admin CP pages.
+
+### Multi-File Plugin Structure
+
+```
+plugin_manager/plugins/public/myplugin/
+├── inc/
+│   ├── plugins/
+│   │   ├── myplugin.php                 # Main plugin file (lifecycle + hooks)
+│   │   └── myplugin/                    # Plugin subdirectory
+│   │       ├── core.php                 # Core functionality class
+│   │       ├── handlers.php             # Hook handler functions
+│   │       ├── admin.php                # Admin CP module
+│   │       ├── ajax.php                 # AJAX handlers
+│   │       └── config.php               # Advanced config (fallback only)
+│   └── languages/english/
+│       ├── myplugin.lang.php            # Frontend language strings
+│       └── admin/myplugin.lang.php      # Admin CP language strings
+├── jscripts/
+│   └── myplugin.js                      # Frontend JavaScript
+├── images/myplugin/                     # Plugin images
+├── styles/
+│   └── myplugin.css                     # Plugin stylesheet
+├── meta.json
+└── README.md
+```
+
+### Loading Plugin Files
+
+In your main plugin file, load additional files as needed:
+
+```php
+<?php
+// myplugin.php
+
+if (!defined('IN_MYBB')) {
+    die('Direct access not allowed.');
+}
+
+define('MYPLUGIN_PATH', MYBB_ROOT . 'inc/plugins/myplugin/');
+
+// Hooks registered at file load time
+$plugins->add_hook('global_start', 'myplugin_global_start');
+$plugins->add_hook('index_start', 'myplugin_index_start');
+$plugins->add_hook('xmlhttp', 'myplugin_ajax_handler');
+$plugins->add_hook('admin_config_menu', 'myplugin_admin_menu');
+$plugins->add_hook('admin_config_action_handler', 'myplugin_admin_action');
+$plugins->add_hook('admin_load', 'myplugin_admin_load');
+
+// Load handlers (contains hook handler functions)
+require_once MYPLUGIN_PATH . 'handlers.php';
+
+// Lifecycle functions below...
+```
+
+### Namespace and Class Organization
+
+For larger plugins, use classes with proper namespacing:
+
+```php
+<?php
+// inc/plugins/myplugin/core.php
+
+namespace MyPlugin;
+
+class Core
+{
+    private static ?self $instance = null;
+    private array $config;
+
+    public static function getInstance(): self
+    {
+        if (self::$instance === null) {
+            self::$instance = new self();
+        }
+        return self::$instance;
+    }
+
+    private function __construct()
+    {
+        global $mybb;
+
+        // Load config from settings with file fallback
+        $this->loadConfig();
+    }
+
+    private function loadConfig(): void
+    {
+        global $mybb;
+
+        $fileConfig = file_exists(MYPLUGIN_PATH . 'config.php')
+            ? require MYPLUGIN_PATH . 'config.php'
+            : [];
+
+        $this->config = [
+            'enabled' => isset($mybb->settings['myplugin_enabled'])
+                ? (bool)$mybb->settings['myplugin_enabled']
+                : ($fileConfig['enabled'] ?? true),
+            'cache_ttl' => isset($mybb->settings['myplugin_cache_ttl'])
+                ? (int)$mybb->settings['myplugin_cache_ttl']
+                : ($fileConfig['cache_ttl'] ?? 3600),
+            // ... more settings
+        ];
+    }
+
+    public function getConfig(string $key, $default = null)
+    {
+        return $this->config[$key] ?? $default;
+    }
+
+    public function isEnabled(): bool
+    {
+        return $this->config['enabled'];
+    }
+}
+```
+
+---
+
+## JavaScript Integration
+
+### Adding JavaScript Files
+
+**Method 1: Via global_end hook (recommended)**
+
+```php
+function myplugin_global_end()
+{
+    global $mybb, $headerinclude;
+
+    // Only load on specific pages if needed
+    if (THIS_SCRIPT !== 'showthread.php') {
+        return;
+    }
+
+    // Add JavaScript
+    $headerinclude .= '<script type="text/javascript" src="' . $mybb->asset_url . '/jscripts/myplugin.js?ver=1.0.0"></script>';
+}
+```
+
+**Method 2: Template modification via find_replace**
+
+```php
+function myplugin_activate()
+{
+    require_once MYBB_ROOT . 'inc/adminfunctions_templates.php';
+
+    find_replace_templatesets(
+        'headerinclude',
+        '#\\{\\$stylesheets\\}#',
+        '{$stylesheets}<script type="text/javascript" src="{$mybb->asset_url}/jscripts/myplugin.js"></script>'
+    );
+}
+
+function myplugin_deactivate()
+{
+    require_once MYBB_ROOT . 'inc/adminfunctions_templates.php';
+
+    find_replace_templatesets(
+        'headerinclude',
+        '#<script type="text/javascript" src="\\{\\$mybb->asset_url\\}/jscripts/myplugin\\.js"></script>#',
+        ''
+    );
+}
+```
+
+### JavaScript Best Practices
+
+```javascript
+// jscripts/myplugin.js
+
+var MyPlugin = {
+    init: function() {
+        // Initialize when DOM ready
+        $(document).ready(function() {
+            MyPlugin.bindEvents();
+        });
+    },
+
+    bindEvents: function() {
+        // Use delegated events for dynamic content
+        $(document).on('click', '.myplugin-button', function(e) {
+            e.preventDefault();
+            MyPlugin.handleClick($(this));
+        });
+    },
+
+    handleClick: function($element) {
+        var postId = $element.data('pid');
+        MyPlugin.sendAjax('action', { pid: postId });
+    },
+
+    sendAjax: function(action, data) {
+        data.action = 'myplugin_' + action;
+        data.my_post_key = my_post_key; // CSRF token (global in MyBB)
+
+        $.ajax({
+            url: 'xmlhttp.php',
+            type: 'POST',
+            data: data,
+            dataType: 'json',
+            success: function(response) {
+                if (response.success) {
+                    MyPlugin.onSuccess(response);
+                } else {
+                    MyPlugin.onError(response.error);
+                }
+            },
+            error: function() {
+                MyPlugin.onError('Request failed');
+            }
+        });
+    },
+
+    onSuccess: function(response) {
+        // Handle success
+    },
+
+    onError: function(message) {
+        alert(message);
+    }
+};
+
+MyPlugin.init();
+```
+
+---
+
+## AJAX Handlers
+
+### Setting Up AJAX via xmlhttp Hook
+
+```php
+// In main plugin file
+$plugins->add_hook('xmlhttp', 'myplugin_ajax_handler');
+
+// In handlers.php
+function myplugin_ajax_handler()
+{
+    global $mybb, $charset;
+
+    // Check if this is our action
+    $action = $mybb->get_input('action');
+    if (strpos($action, 'myplugin_') !== 0) {
+        return;
+    }
+
+    // CSRF verification (REQUIRED)
+    verify_post_check($mybb->get_input('my_post_key'));
+
+    // Must be logged in
+    if (!$mybb->user['uid']) {
+        myplugin_ajax_error('You must be logged in.');
+    }
+
+    // Route to specific handler
+    switch ($action) {
+        case 'myplugin_vote':
+            myplugin_ajax_vote();
+            break;
+        case 'myplugin_delete':
+            myplugin_ajax_delete();
+            break;
+        default:
+            myplugin_ajax_error('Invalid action.');
+    }
+}
+
+function myplugin_ajax_vote()
+{
+    global $mybb, $db;
+
+    $post_id = $mybb->get_input('pid', MyBB::INPUT_INT);
+    $vote = $mybb->get_input('vote', MyBB::INPUT_INT);
+
+    if (!$post_id || !in_array($vote, [-1, 1])) {
+        myplugin_ajax_error('Invalid parameters.');
+    }
+
+    // Process vote...
+    $db->insert_query('myplugin_votes', [
+        'pid' => $post_id,
+        'uid' => $mybb->user['uid'],
+        'vote' => $vote,
+        'dateline' => TIME_NOW
+    ]);
+
+    myplugin_ajax_success(['message' => 'Vote recorded!', 'new_score' => 42]);
+}
+
+function myplugin_ajax_success(array $data = [])
+{
+    header('Content-Type: application/json; charset=utf-8');
+    echo json_encode(array_merge(['success' => true], $data));
+    exit;
+}
+
+function myplugin_ajax_error(string $message)
+{
+    header('Content-Type: application/json; charset=utf-8');
+    echo json_encode(['success' => false, 'error' => $message]);
+    exit;
+}
+```
+
+---
+
+## Stylesheet Integration
+
+### Adding CSS Files
+
+**Method 1: Inject in headerinclude (global_end hook)**
+
+```php
+function myplugin_global_end()
+{
+    global $mybb, $headerinclude;
+
+    $headerinclude .= '<link rel="stylesheet" href="' . $mybb->asset_url . '/styles/myplugin.css?ver=1.0.0" />';
+}
+```
+
+**Method 2: Create stylesheet in database (_activate)**
+
+```php
+function myplugin_activate()
+{
+    global $db;
+
+    // Read CSS from file
+    $css = file_get_contents(MYBB_ROOT . 'styles/myplugin.css');
+
+    // Insert stylesheet record
+    $stylesheet = [
+        'name'         => 'myplugin.css',
+        'tid'          => 1,  // Theme ID (1 = default)
+        'attachedto'   => '', // Empty = all pages, or 'showthread.php,forumdisplay.php'
+        'stylesheet'   => $db->escape_string($css),
+        'cachefile'    => 'myplugin.css',
+        'lastmodified' => TIME_NOW
+    ];
+    $db->insert_query('themestylesheets', $stylesheet);
+
+    // Update theme stylesheet list
+    require_once MYBB_ROOT . 'inc/adminfunctions_templates.php';
+    update_theme_stylesheet_list(1);
+}
+
+function myplugin_deactivate()
+{
+    global $db;
+
+    // Remove stylesheet
+    $db->delete_query('themestylesheets', "name = 'myplugin.css'");
+
+    // Update theme stylesheet list
+    require_once MYBB_ROOT . 'inc/adminfunctions_templates.php';
+    update_theme_stylesheet_list(1);
+}
+```
+
+**Method 3: Inline styles (small CSS only)**
+
+```php
+function myplugin_global_end()
+{
+    global $headerinclude;
+
+    $headerinclude .= '<style>
+.myplugin-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    background: #4a90d9;
+    color: #fff;
+    border-radius: 4px;
+    font-size: 11px;
+}
+</style>';
+}
+```
+
+---
+
+## Admin CP Modules
+
+### Creating an Admin Page
+
+```php
+// Hook registration in main file
+$plugins->add_hook('admin_config_menu', 'myplugin_admin_menu');
+$plugins->add_hook('admin_config_action_handler', 'myplugin_admin_action');
+$plugins->add_hook('admin_load', 'myplugin_admin_load');
+
+// In handlers.php or admin.php
+function myplugin_admin_menu(&$sub_menu)
+{
+    global $lang;
+    $lang->load('myplugin', false, true);
+
+    $sub_menu[] = [
+        'id'    => 'myplugin',
+        'title' => $lang->myplugin_admin_title ?? 'My Plugin',
+        'link'  => 'index.php?module=config-myplugin'
+    ];
+}
+
+function myplugin_admin_action(&$actions)
+{
+    $actions['myplugin'] = ['active' => 'myplugin'];
+}
+
+function myplugin_admin_load()
+{
+    global $mybb, $page, $db, $lang;
+
+    if ($page->active_action !== 'myplugin') {
+        return;
+    }
+
+    $lang->load('myplugin', false, true);
+
+    // Page header
+    $page->add_breadcrumb_item($lang->myplugin_admin_title ?? 'My Plugin');
+    $page->output_header($lang->myplugin_admin_title ?? 'My Plugin');
+
+    // Tabs
+    $tabs = [
+        'main'     => $lang->myplugin_tab_main ?? 'Main',
+        'settings' => $lang->myplugin_tab_settings ?? 'Settings',
+        'logs'     => $lang->myplugin_tab_logs ?? 'Logs'
+    ];
+
+    $page->output_nav_tabs($tabs, 'main');
+
+    // Handle form submission
+    if ($mybb->request_method === 'post') {
+        verify_post_check($mybb->get_input('my_post_key'));
+
+        // Process form...
+        flash_message($lang->myplugin_saved ?? 'Settings saved.', 'success');
+        admin_redirect('index.php?module=config-myplugin');
+    }
+
+    // Build form
+    $form = new Form('index.php?module=config-myplugin', 'post');
+
+    $form_container = new FormContainer($lang->myplugin_settings ?? 'Settings');
+    $form_container->output_row(
+        $lang->myplugin_option1 ?? 'Option 1',
+        $lang->myplugin_option1_desc ?? 'Description',
+        $form->generate_yes_no_radio('myplugin_option1', $mybb->settings['myplugin_option1'])
+    );
+    $form_container->end();
+
+    $buttons[] = $form->generate_submit_button($lang->myplugin_save ?? 'Save');
+    $form->output_submit_wrapper($buttons);
+    $form->end();
+
+    $page->output_footer();
+    exit;
+}
+```
+
+### Admin Language File
+
+```php
+<?php
+// inc/languages/english/admin/myplugin.lang.php
+
+$l['myplugin_admin_title'] = 'My Plugin';
+$l['myplugin_tab_main'] = 'Main';
+$l['myplugin_tab_settings'] = 'Settings';
+$l['myplugin_tab_logs'] = 'Logs';
+$l['myplugin_settings'] = 'Plugin Settings';
+$l['myplugin_option1'] = 'Enable Feature';
+$l['myplugin_option1_desc'] = 'Enable or disable the main feature.';
+$l['myplugin_save'] = 'Save Settings';
+$l['myplugin_saved'] = 'Settings saved successfully.';
+```
+
+---
+
+## Template Groups
+
+### Organizing Plugin Templates
+
+Group your templates logically for Admin CP display:
+
+```php
+function myplugin_activate()
+{
+    global $db;
+
+    // Create template group
+    $db->insert_query('templategroups', [
+        'prefix' => 'myplugin',
+        'title'  => '<lang:myplugin_tpl_group>',
+        'isdefault' => 0
+    ]);
+
+    // Create templates (they'll be grouped by prefix)
+    $templates = [
+        'myplugin_main'   => '<div class="myplugin-container">{$content}</div>',
+        'myplugin_item'   => '<div class="myplugin-item">{$item_content}</div>',
+        'myplugin_button' => '<a href="{$url}" class="myplugin-btn">{$label}</a>',
+    ];
+
+    foreach ($templates as $title => $template) {
+        $db->insert_query('templates', [
+            'title'    => $title,
+            'template' => $db->escape_string($template),
+            'sid'      => -2,  // Master templates
+            'version'  => '',
+            'dateline' => TIME_NOW
+        ]);
+    }
+}
+
+function myplugin_deactivate()
+{
+    global $db;
+
+    // Remove templates
+    $db->delete_query('templates', "title LIKE 'myplugin_%' AND sid = -2");
+
+    // Remove template group
+    $db->delete_query('templategroups', "prefix = 'myplugin'");
+}
+```
 
 ---
 
