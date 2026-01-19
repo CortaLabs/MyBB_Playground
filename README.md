@@ -13,7 +13,7 @@
 
 [Getting Started](#-quick-start) •
 [Documentation](docs/wiki/index.md) •
-[85+ MCP Tools](docs/wiki/mcp_tools/index.md) •
+[94 MCP Tools](docs/wiki/mcp_tools/index.md) •
 [Plugin Manager](docs/wiki/plugin_manager/index.md)
 
 </div>
@@ -39,7 +39,7 @@ Claude: Creates complete plugin with:
 
 | Feature | Description |
 |---------|-------------|
-| **85+ MCP Tools** | Full MyBB API coverage — templates, themes, plugins, forums, users, moderation, settings |
+| **94 MCP Tools** | Full MyBB API coverage — templates, themes, plugins, forums, users, moderation, settings |
 | **Disk Sync** | Edit templates/stylesheets in your editor, auto-syncs to database |
 | **Plugin Manager** | Structured workspace for plugin development with deployment tracking |
 | **PHP Bridge** | Execute actual PHP lifecycle functions (_install, _activate, etc.) |
@@ -49,47 +49,79 @@ Claude: Creates complete plugin with:
 
 ## Quick Start
 
-### 1. Clone and Setup
+### 1. Clone and Install
 
 ```bash
 git clone https://github.com/CortaLabs/MyBB_Playground.git
 cd MyBB_Playground
 
-# Install PHP, MariaDB, create database (Ubuntu/Debian/WSL)
-./setup_dev_env.sh
+# Interactive installer handles everything:
+# - OS detection (Ubuntu/Debian/macOS/WSL)
+# - PHP, MariaDB installation
+# - Database setup
+# - MyBB download & extraction
+# - Default plugin deployment
+# - Git authentication (optional)
+# - Claude Code MCP integration
+./install.sh
+```
 
-# Start MyBB server on port 8022
+The installer will prompt you through each step and save your configuration to `.env`.
+
+### 2. Start the Server
+
+```bash
 ./start_mybb.sh
 ```
 
-Complete MyBB installation at http://localhost:8022/install/
-
-### 2. Install MCP Server
-
-```bash
-cd mybb_mcp
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -e .
-```
+This starts PHP's built-in server on port 8022 (configurable in `.env`).
 
 ### 3. Connect to Claude Code
 
+The installer sets up MCP automatically, but you can also do it manually:
+
 ```bash
-# Add MCP server (run from mybb_mcp directory)
-claude mcp add --scope user --transport stdio mybb \
+cd mybb_mcp
+
+# Create virtual environment and install
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e .
+
+# Register MCP server (project scope - only active in this directory)
+claude mcp add --scope project --transport stdio mybb \
   -- $(pwd)/.venv/bin/python -m mybb_mcp.server
 ```
 
-Restart Claude Code to load the MCP server.
+Restart Claude Code to load the MCP server. Verify with `claude mcp get mybb`.
 
-### 4. Start Building
+### 4. Complete MyBB Web Setup
+
+Open http://localhost:8022/install/ and follow the MyBB installer:
+- Use the database credentials shown at the end of `install.sh`
+- Remove `TestForum/install/` after completing setup (or just delete `lock` file)
+
+### 5. Start Building
 
 ```
 "List all available template sets"
 "Create a plugin called user_badges that displays badges based on post count"
 "Show me the index template and add a welcome banner"
 "What hooks are available for the member profile page?"
+```
+
+### Non-Interactive Mode
+
+For CI/CD or scripted setups:
+
+```bash
+# Set environment variables, then run non-interactively
+export MYBB_DB_NAME=mybb_dev
+export MYBB_DB_USER=mybb_user
+export MYBB_DB_PASS=secretpassword
+export MYBB_INSTALL_MODE=fresh  # fresh, update, or skip
+
+./install.sh -y
 ```
 
 > **Full setup guide:** [docs/wiki/getting_started/installation.md](docs/wiki/getting_started/installation.md)
@@ -100,7 +132,7 @@ Restart Claude Code to load the MCP server.
 
 ```
 MyBB_Playground/
-├── mybb_mcp/                 # MCP Server (85+ tools)
+├── mybb_mcp/                 # MCP Server (94 tools)
 │   ├── server.py             # Server orchestration (116 lines)
 │   ├── tools_registry.py     # Tool definitions (85 tools)
 │   ├── handlers/             # Modular tool handlers
@@ -123,13 +155,13 @@ MyBB_Playground/
 │   ├── plugins/private/      # Local-only plugins
 │   └── themes/               # Theme workspaces
 │
-├── TestForum/                # MyBB Installation
+├── TestForum/                # MyBB Installation (downloaded by install.sh)
 │   ├── inc/plugins/          # Deployed plugins
-│   └── mcp_bridge.php        # PHP lifecycle bridge
+│   └── mcp_bridge.php        # PHP lifecycle bridge (from install_files/)
 │
 ├── docs/wiki/                # Documentation (340KB)
 │   ├── getting_started/      # Installation & quickstart
-│   ├── mcp_tools/            # All 85+ tools documented
+│   ├── mcp_tools/            # All 94 tools documented
 │   ├── plugin_manager/       # Workspace & deployment
 │   ├── architecture/         # System internals
 │   └── best_practices/       # Development patterns
@@ -139,7 +171,7 @@ MyBB_Playground/
 
 ---
 
-## MCP Tools (85+)
+## MCP Tools (94)
 
 Full reference: [docs/wiki/mcp_tools/index.md](docs/wiki/mcp_tools/index.md)
 
@@ -148,6 +180,7 @@ Full reference: [docs/wiki/mcp_tools/index.md](docs/wiki/mcp_tools/index.md)
 | [**Templates**](docs/wiki/mcp_tools/templates.md) | 9 | List, read, write, batch operations, find/replace, outdated detection |
 | [**Themes**](docs/wiki/mcp_tools/themes_stylesheets.md) | 6 | Theme management, stylesheet CRUD, theme creation |
 | [**Plugins**](docs/wiki/mcp_tools/plugins.md) | 15 | Full lifecycle — create, install, activate, hooks discovery |
+| [**Plugin Git**](docs/wiki/mcp_tools/plugins.md#git-tools) | 7 | Init, GitHub create, status, commit, push, pull |
 | [**Forums/Threads/Posts**](docs/wiki/mcp_tools/forums_threads_posts.md) | 17 | Complete content management |
 | [**Users/Moderation**](docs/wiki/mcp_tools/users_moderation.md) | 14 | User management, mod actions, logging |
 | [**Search**](docs/wiki/mcp_tools/search.md) | 4 | Posts, threads, users, advanced search |
@@ -207,6 +240,38 @@ plugin_manager/plugins/public/
 
 > **Full guide:** [docs/wiki/plugin_manager/index.md](docs/wiki/plugin_manager/index.md)
 
+### Private Plugins & Git Integration
+
+Private plugins use **nested git repositories** — each plugin has its own independent repo:
+
+```
+plugin_manager/plugins/
+├── public/               # Default plugins (tracked in parent repo)
+│   ├── cortex/
+│   └── dice_roller/
+└── private/              # Private plugins (nested git repos)
+    └── my_plugin/
+        └── .git/         # Independent repo
+```
+
+**Git workflow via MCP tools:**
+
+```python
+# Initialize git for private plugin
+mybb_plugin_git_init(codename="my_plugin", visibility="private")
+
+# Create GitHub repo (auto-prefixes with mybb_playground_)
+mybb_plugin_github_create(codename="my_plugin", repo_visibility="private")
+
+# Commit and push changes
+mybb_plugin_git_commit(codename="my_plugin", visibility="private", message="Add feature X")
+mybb_plugin_git_push(codename="my_plugin", visibility="private")
+```
+
+**Workspace vs parent repo:**
+- **Parent repo (MyBB Playground):** CLI git for MCP server, scripts, docs
+- **Private plugins/themes:** MCP git tools (`mybb_plugin_git_*`)
+
 ### Template/Stylesheet Editing
 
 ```bash
@@ -231,7 +296,7 @@ mybb_sync_start_watcher()
 | Section | Description |
 |---------|-------------|
 | [**Getting Started**](docs/wiki/getting_started/index.md) | Installation, quickstart tutorial |
-| [**MCP Tools Reference**](docs/wiki/mcp_tools/index.md) | All 85+ tools with parameters and examples |
+| [**MCP Tools Reference**](docs/wiki/mcp_tools/index.md) | All 94 tools with parameters and examples |
 | [**Plugin Manager**](docs/wiki/plugin_manager/index.md) | Workspace, deployment, PHP lifecycle |
 | [**Architecture**](docs/wiki/architecture/index.md) | MCP server, disk sync, configuration |
 | [**Best Practices**](docs/wiki/best_practices/index.md) | Plugin/theme patterns, security |
@@ -240,21 +305,49 @@ mybb_sync_start_watcher()
 
 ## Configuration
 
-Create `.env` in project root:
+### Environment (`.env`)
+
+Generated automatically by `install.sh`. You can edit manually if needed:
 
 ```bash
 # Database
 MYBB_DB_HOST=localhost
-MYBB_DB_PORT=3306
 MYBB_DB_NAME=mybb_dev
 MYBB_DB_USER=mybb_user
 MYBB_DB_PASS=your_password
 MYBB_DB_PREFIX=mybb_
 
-# Paths
+# Server
+MYBB_PORT=8022
 MYBB_ROOT=/path/to/MyBB_Playground/TestForum
 MYBB_URL=http://localhost:8022
-MYBB_PORT=8022
+```
+
+### Forge Config (`.mybb-forge.yaml`)
+
+Developer settings and defaults for plugin creation:
+
+```yaml
+# Developer metadata (auto-fills plugin meta.json)
+developer:
+  name: "Your Name"
+  website: "https://yoursite.com"
+  email: "you@example.com"
+
+# Defaults for new plugins
+defaults:
+  compatibility: "18*"
+  license: "MIT"
+  visibility: "public"
+
+# GitHub settings
+github:
+  repo_prefix: "mybb_playground_"  # Prefix for GitHub repos
+
+# Default plugins to deploy on fresh install
+default_plugins:
+  - cortex        # Secure template conditionals
+  - dice_roller   # BBCode dice rolling
 ```
 
 > **Full configuration guide:** [docs/wiki/architecture/configuration.md](docs/wiki/architecture/configuration.md)

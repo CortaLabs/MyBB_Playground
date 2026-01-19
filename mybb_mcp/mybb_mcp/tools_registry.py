@@ -825,6 +825,47 @@ PLUGIN_GIT_TOOLS = [
             "required": ["codename"],
         },
     ),
+    Tool(
+        name="mybb_plugin_git_commit",
+        description="Commit changes in a plugin or theme repository. Stages all changes and commits with message.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "codename": {"type": "string", "description": "Plugin or theme codename"},
+                "message": {"type": "string", "description": "Commit message"},
+                "type": {"type": "string", "description": "'plugin' or 'theme'", "enum": ["plugin", "theme"]},
+                "visibility": {"type": "string", "description": "'public' or 'private'", "enum": ["public", "private"]},
+            },
+            "required": ["codename", "message"],
+        },
+    ),
+    Tool(
+        name="mybb_plugin_git_push",
+        description="Push commits to remote repository.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "codename": {"type": "string", "description": "Plugin or theme codename"},
+                "type": {"type": "string", "description": "'plugin' or 'theme'", "enum": ["plugin", "theme"]},
+                "visibility": {"type": "string", "description": "'public' or 'private'", "enum": ["public", "private"]},
+                "set_upstream": {"type": "boolean", "description": "Set upstream tracking branch", "default": False},
+            },
+            "required": ["codename"],
+        },
+    ),
+    Tool(
+        name="mybb_plugin_git_pull",
+        description="Pull changes from remote repository.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "codename": {"type": "string", "description": "Plugin or theme codename"},
+                "type": {"type": "string", "description": "'plugin' or 'theme'", "enum": ["plugin", "theme"]},
+                "visibility": {"type": "string", "description": "'public' or 'private'", "enum": ["public", "private"]},
+            },
+            "required": ["codename"],
+        },
+    ),
 ]
 
 
@@ -1189,5 +1230,5 @@ ALL_TOOLS = (
 )
 
 # Tool count verification
-EXPECTED_TOOL_COUNT = 91  # Was 89, added 2 delete tools (mybb_delete_plugin, mybb_delete_theme)
+EXPECTED_TOOL_COUNT = 94  # Was 91, added 3 git tools (commit, push, pull)
 assert len(ALL_TOOLS) == EXPECTED_TOOL_COUNT, f"Expected {EXPECTED_TOOL_COUNT} tools, got {len(ALL_TOOLS)}"

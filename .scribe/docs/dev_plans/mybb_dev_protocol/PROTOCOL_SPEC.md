@@ -180,6 +180,105 @@ mybb_delete_plugin(codename)  # Archives by default
 
 ---
 
+## Git Hygiene for Private Plugins/Themes
+
+Private plugins and themes are managed as **nested git repositories** - each plugin/theme has its own git repo independent of the main MyBB Playground repo.
+
+### Workspace Structure
+
+```
+plugin_manager/
+├── plugins/
+│   ├── public/           # Tracked in parent repo (default plugins)
+│   │   ├── cortex/       # Ships with playground
+│   │   └── dice_roller/  # Ships with playground
+│   └── private/          # Gitignored - nested repos
+│       └── invite_system/
+│           └── .git/     # Independent git repo
+└── themes/               # Gitignored - nested repos
+    └── my_theme/
+        └── .git/         # Independent git repo
+```
+
+### Git Tools for Plugins/Themes
+
+```bash
+# Initialize git for a plugin
+mybb_plugin_git_init(codename="my_plugin", visibility="private")
+
+# Create GitHub repo (uses prefix from .mybb-forge.yaml)
+mybb_plugin_github_create(codename="my_plugin", visibility="private", repo_visibility="private")
+# Creates: github.com/YourOrg/mybb_playground_my_plugin
+
+# Check status
+mybb_plugin_git_status(codename="my_plugin", visibility="private")
+
+# Commit changes
+mybb_plugin_git_commit(codename="my_plugin", visibility="private", message="Add feature X")
+
+# Push to remote
+mybb_plugin_git_push(codename="my_plugin", visibility="private")
+
+# Pull updates
+mybb_plugin_git_pull(codename="my_plugin", visibility="private")
+```
+
+### Commit Discipline
+
+**Commit after each development phase:**
+
+| Phase | When to Commit |
+|-------|----------------|
+| Research | After research docs complete |
+| Architect | After architecture docs approved |
+| Code | After each task package completed |
+| Review | After fixes from review |
+| Documentation | After README/docs finalized |
+
+**Commit Message Format:**
+```
+<type>: <description>
+
+Types: feat, fix, docs, refactor, test, chore
+```
+
+**Examples:**
+```
+feat: Add invite code validation
+fix: Handle expired codes gracefully
+docs: Update README with configuration
+refactor: Extract validation to separate class
+test: Add unit tests for InviteCode class
+chore: Update dependencies
+```
+
+### Parent Repo vs Plugin Repos
+
+| Repository | Commit Method | What's Tracked |
+|------------|---------------|----------------|
+| MyBB Playground (parent) | CLI: `git commit` | MCP server, install scripts, docs, default plugins |
+| Private plugins | MCP: `mybb_plugin_git_commit` | Plugin code, templates, assets |
+| Private themes | MCP: `mybb_plugin_git_commit` | Theme stylesheets, templates |
+
+**Rule:** Use MCP git tools for plugin/theme repos. Use CLI git for the parent repo.
+
+### .mybb-forge.yaml Configuration
+
+```yaml
+# GitHub settings
+github:
+  repo_prefix: "mybb_playground_"  # Prefix for all plugin/theme repos
+
+# Default plugins (tracked in parent repo, NOT nested repos)
+default_plugins:
+  - cortex
+  - dice_roller
+```
+
+The gitignore is auto-managed by `ForgeConfig.sync_gitignore()` based on `default_plugins`.
+
+---
+
 ## Template/Stylesheet Workflow
 
 **Source of Truth:** Filesystem (`mybb_sync/`)

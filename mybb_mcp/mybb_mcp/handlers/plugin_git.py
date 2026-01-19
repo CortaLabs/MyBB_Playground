@@ -2,8 +2,14 @@
 
 import subprocess
 import json
+import sys
 from pathlib import Path
 from typing import Any, Optional, Dict, List
+
+# Add plugin_manager to path for ForgeConfig
+# Path: handlers -> mybb_mcp -> mybb_mcp -> MyBB_Playground
+sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent / "plugin_manager"))
+from forge_config import ForgeConfig
 
 
 def get_plugin_path(config: Any, codename: str, visibility: str = "public") -> Path:
@@ -160,6 +166,11 @@ async def handle_plugin_git_init(args: dict, db: Any, config: Any, sync_service:
             return f"Git already initialized for '{codename}' (no remote configured)"
 
     try:
+        # Sync parent .gitignore to ensure this plugin is ignored (unless it's a default)
+        repo_root = Path(config.mybb_root).parent
+        forge_config = ForgeConfig(repo_root)
+        forge_config.sync_gitignore()
+
         # Initialize git
         result = run_git(path, "init", "-b", branch)
         if result.returncode != 0:
@@ -234,8 +245,15 @@ async def handle_plugin_github_create(args: dict, db: Any, config: Any, sync_ser
     item_type = args.get("type", "plugin")
     visibility = args.get("visibility", "public")
     repo_visibility = args.get("repo_visibility", "private")
-    repo_name = args.get("repo_name", codename)
     description = args.get("description", f"MyBB {item_type}: {codename}")
+
+    # Load ForgeConfig to get repo prefix
+    repo_root = Path(config.mybb_root).parent
+    forge_config = ForgeConfig(repo_root)
+    prefix = forge_config.github_repo_prefix
+
+    # Apply prefix to repo name (unless user explicitly provided repo_name)
+    repo_name = args.get("repo_name") or f"{prefix}{codename}"
 
     # Get path
     if item_type == "theme":
@@ -362,10 +380,219 @@ async def handle_plugin_git_status(args: dict, db: Any, config: Any, sync_servic
         return f"Error: {str(e)}"
 
 
+async def handle_plugin_git_commit(args: dict, db: Any, config: Any, sync_service: Any) -> str:
+    """Commit changes in a plugin or theme repository.
+
+    Args:
+        args: Tool arguments:
+            - codename (str, required): Plugin or theme codename
+            - message (str, required): Commit message
+            - type (str, optional): "plugin" or "theme" (default: "plugin")
+            - visibility (str, optional): "public" or "private" (default: "public", plugins only)
+        db: MyBBDatabase instance (unused)
+        config: Server configuration
+        sync_service: Disk sync service (unused)
+
+    Returns:
+        Success message or error
+    """
+    codename = args.get("codename")
+    if not codename:
+        return "Error: codename parameter is required"
+
+    message = args.get("message")
+    if not message:
+        return "Error: message parameter is required"
+
+    item_type = args.get("type", "plugin")
+    visibility = args.get("visibility", "public")
+
+    # Get path
+    if item_type == "theme":
+        path = get_theme_path(config, codename)
+    else:
+        path = get_plugin_path(config, codename, visibility)
+
+    if not path.exists():
+        return f"Error: {item_type} '{codename}' not found at `{path}`"
+
+    if not has_git(path):
+        return f"Git not initialized for '{codename}'. Use `mybb_plugin_git_init` first."
+
+    try:
+        # Check if there are changes to commit
+        status = run_git(path, "status", "--porcelain")
+        if not status.stdout.strip():
+            return f"Nothing to commit for '{codename}' - working tree clean."
+
+        # Stage all changes
+        run_git(path, "add", "-A")
+
+        # Commit
+        result = run_git(path, "commit", "-m", message)
+        if result.returncode != 0:
+            return f"Error committing:\n```\n{result.stderr}\n```"
+
+        # Get commit hash
+        hash_result = run_git(path, "rev-parse", "--short", "HEAD")
+        commit_hash = hash_result.stdout.strip()
+
+        return "\n".join([
+            f"✅ Committed changes to '{codename}'",
+            f"- **Commit:** `{commit_hash}`",
+            f"- **Message:** {message}",
+            "",
+            "Use `mybb_plugin_git_push` to push to remote."
+        ])
+
+    except subprocess.TimeoutExpired:
+        return "Error: git command timed out"
+    except Exception as e:
+        return f"Error: {str(e)}"
+
+
+async def handle_plugin_git_push(args: dict, db: Any, config: Any, sync_service: Any) -> str:
+    """Push commits to remote repository.
+
+    Args:
+        args: Tool arguments:
+            - codename (str, required): Plugin or theme codename
+            - type (str, optional): "plugin" or "theme" (default: "plugin")
+            - visibility (str, optional): "public" or "private" (default: "public", plugins only)
+            - set_upstream (bool, optional): Set upstream tracking (default: False)
+        db: MyBBDatabase instance (unused)
+        config: Server configuration
+        sync_service: Disk sync service (unused)
+
+    Returns:
+        Success message or error
+    """
+    codename = args.get("codename")
+    if not codename:
+        return "Error: codename parameter is required"
+
+    item_type = args.get("type", "plugin")
+    visibility = args.get("visibility", "public")
+    set_upstream = args.get("set_upstream", False)
+
+    # Get path
+    if item_type == "theme":
+        path = get_theme_path(config, codename)
+    else:
+        path = get_plugin_path(config, codename, visibility)
+
+    if not path.exists():
+        return f"Error: {item_type} '{codename}' not found at `{path}`"
+
+    if not has_git(path):
+        return f"Git not initialized for '{codename}'. Use `mybb_plugin_git_init` first."
+
+    remote = get_git_remote(path)
+    if not remote:
+        return f"No remote configured for '{codename}'. Use `mybb_plugin_github_create` first."
+
+    try:
+        # Get current branch
+        branch_result = run_git(path, "branch", "--show-current")
+        branch = branch_result.stdout.strip() or "main"
+
+        # Push
+        if set_upstream:
+            result = run_git(path, "push", "-u", "origin", branch, timeout=60)
+        else:
+            result = run_git(path, "push", timeout=60)
+
+        if result.returncode != 0:
+            # Check if it's an upstream issue
+            if "no upstream branch" in result.stderr.lower() or "set-upstream" in result.stderr.lower():
+                result = run_git(path, "push", "-u", "origin", branch, timeout=60)
+                if result.returncode != 0:
+                    return f"Error pushing:\n```\n{result.stderr}\n```"
+            else:
+                return f"Error pushing:\n```\n{result.stderr}\n```"
+
+        return "\n".join([
+            f"✅ Pushed '{codename}' to remote",
+            f"- **Branch:** `{branch}`",
+            f"- **Remote:** `{remote}`"
+        ])
+
+    except subprocess.TimeoutExpired:
+        return "Error: git push timed out (60s limit)"
+    except Exception as e:
+        return f"Error: {str(e)}"
+
+
+async def handle_plugin_git_pull(args: dict, db: Any, config: Any, sync_service: Any) -> str:
+    """Pull changes from remote repository.
+
+    Args:
+        args: Tool arguments:
+            - codename (str, required): Plugin or theme codename
+            - type (str, optional): "plugin" or "theme" (default: "plugin")
+            - visibility (str, optional): "public" or "private" (default: "public", plugins only)
+        db: MyBBDatabase instance (unused)
+        config: Server configuration
+        sync_service: Disk sync service (unused)
+
+    Returns:
+        Success message or error
+    """
+    codename = args.get("codename")
+    if not codename:
+        return "Error: codename parameter is required"
+
+    item_type = args.get("type", "plugin")
+    visibility = args.get("visibility", "public")
+
+    # Get path
+    if item_type == "theme":
+        path = get_theme_path(config, codename)
+    else:
+        path = get_plugin_path(config, codename, visibility)
+
+    if not path.exists():
+        return f"Error: {item_type} '{codename}' not found at `{path}`"
+
+    if not has_git(path):
+        return f"Git not initialized for '{codename}'. Use `mybb_plugin_git_init` first."
+
+    remote = get_git_remote(path)
+    if not remote:
+        return f"No remote configured for '{codename}'."
+
+    try:
+        result = run_git(path, "pull", timeout=60)
+
+        if result.returncode != 0:
+            return f"Error pulling:\n```\n{result.stderr}\n```"
+
+        output = result.stdout.strip()
+        if "Already up to date" in output:
+            return f"'{codename}' is already up to date."
+
+        return "\n".join([
+            f"✅ Pulled changes for '{codename}'",
+            f"- **Remote:** `{remote}`",
+            "",
+            "```",
+            output,
+            "```"
+        ])
+
+    except subprocess.TimeoutExpired:
+        return "Error: git pull timed out (60s limit)"
+    except Exception as e:
+        return f"Error: {str(e)}"
+
+
 # Handler registry for plugin git tools
 PLUGIN_GIT_HANDLERS = {
     "mybb_plugin_git_list": handle_plugin_git_list,
     "mybb_plugin_git_init": handle_plugin_git_init,
     "mybb_plugin_github_create": handle_plugin_github_create,
     "mybb_plugin_git_status": handle_plugin_git_status,
+    "mybb_plugin_git_commit": handle_plugin_git_commit,
+    "mybb_plugin_git_push": handle_plugin_git_push,
+    "mybb_plugin_git_pull": handle_plugin_git_pull,
 }

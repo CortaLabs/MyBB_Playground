@@ -169,13 +169,8 @@ mcp_server/logs/
 # ===========================================
 # Plugin Manager
 # ===========================================
-# NOTE: Private plugins/themes managed via git subtree should NOT be ignored.
-# Add negation patterns below for subtree-managed items.
-plugin_manager/plugins/private/
-plugin_manager/themes/private/
-
-# Subtree-managed private plugins (tracked for subtree push/pull)
-!plugin_manager/plugins/private/invite_system/
+# Plugin/theme workspaces are managed by ForgeConfig.sync_gitignore()
+# See .mybb-forge.yaml default_plugins for tracked plugins
 .plugin_manager/projects.db
 
 # Deployed plugins (source of truth is plugin_manager/)
@@ -208,6 +203,13 @@ test-results/
 read_only_code
 
 # ===========================================
+# Scribe Project Misc Logs
+# ===========================================
+TOOL_LOG.jsonl
+*.md.lock
+*.md.journal
+DOC_LOG.md
+# ===========================================
 # Invite System Plugin (managed via git subtree)
 # ===========================================
 TestForum/inc/plugins/invite_system.php
@@ -218,3 +220,17 @@ TestForum/inc/tasks/invite_*.php
 mybb_sync/template_sets/*/Invite System Templates/
 .scribe/docs/dev_plans/invite_system/
 .scribe/docs/dev_plans/invite-system/
+plugin_manager/backups/*
+.plugin_manager/projects.db.backup_*
+
+
+# BEGIN MYBB-FORGE MANAGED - DO NOT EDIT
+# Plugin/theme workspaces (nested git repos by default)
+plugin_manager/plugins/public/*/
+plugin_manager/plugins/private/*/
+plugin_manager/themes/*/
+
+# Default plugins (tracked, ship with playground)
+!plugin_manager/plugins/public/cortex/
+!plugin_manager/plugins/public/dice_roller/
+# END MYBB-FORGE MANAGED

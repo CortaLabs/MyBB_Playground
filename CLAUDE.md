@@ -214,6 +214,36 @@ Core files will be overwritten on MyBB upgrades. Hooks and plugins are the corre
 - Use disk sync for editing, not direct DB writes
 - See [Theme Development guide](docs/wiki/best_practices/theme_development.md)
 
+**Git Hygiene for Private Plugins/Themes:**
+
+Private plugins and themes use **nested git repositories** — each has its own independent git repo.
+
+```
+plugin_manager/
+├── plugins/
+│   ├── public/           # Tracked in parent repo (default plugins like cortex, dice_roller)
+│   └── private/          # Gitignored - each plugin is its own nested repo
+│       └── my_plugin/
+│           └── .git/     # Independent git repo
+└── themes/               # Gitignored - nested repos
+```
+
+**MCP Git Tools (for plugin/theme repos):**
+```python
+mybb_plugin_git_init(codename, visibility="private")      # Initialize git
+mybb_plugin_github_create(codename, visibility, repo_visibility)  # Create GitHub repo
+mybb_plugin_git_status(codename, visibility)              # Check status
+mybb_plugin_git_commit(codename, visibility, message)     # Commit changes
+mybb_plugin_git_push(codename, visibility)                # Push to remote
+mybb_plugin_git_pull(codename, visibility)                # Pull from remote
+```
+
+**Commit after each phase:** Research → Architect → Code (per task) → Review fixes → Documentation
+
+**Parent repo (MyBB Playground):** Use CLI `git commit` for MCP server code, install scripts, docs, and default plugins.
+
+**Plugin/theme repos:** Use MCP git tools above. GitHub repos use prefix from `.mybb-forge.yaml` (e.g., `mybb_playground_my_plugin`).
+
 **MyBB Context:**
 - MyBB is 15+ year old PHP forum software with a mature but dated architecture
 - Work within MyBB's hook/template system — don't try to modernize MyBB itself
@@ -271,6 +301,45 @@ Core files will be overwritten on MyBB upgrades. Hooks and plugins are the corre
 ## Scribe Orchestration Protocol
 
 This project uses Scribe for structured development tracking. **Multiple Scribe projects may exist within this repo** — each major feature or component can have its own project.
+
+### 🚨 Scribe Commandments (Non-Negotiable)
+
+These rules are MANDATORY for all agents. Violations = rejection.
+
+#### #0 — Always Rehydrate From Progress Log First
+- **Before ANY work:** Call `read_recent(n=5)` minimum, `query_entries` for targeted history
+- **Why:** Progress log is source of truth. Skipping it causes hallucinated priorities and broken invariants
+- **Sentinel mode (no project):** `read_recent`/`query_entries` operate on global scope — don't target a project path
+
+#### #0.5 — Infrastructure Primacy (No Replacement Files)
+- **Rule:** Work within existing system. NEVER create `enhanced_*`, `*_v2`, `*_new` files to avoid integration
+- **Why:** Replacement files create tech debt, split code paths, destroy reliability
+- **Comply:** Edit/extend/refactor existing components. If blocked, escalate with a plan — don't fork
+
+#### #1 — Always Scribe (Log Everything Significant)
+- **Rule:** Use `append_entry` for EVERY significant action: investigations, decisions, code changes, test results, bugs, plan updates
+- **If not Scribed, it didn't happen** — this is your audit trail
+- **Orchestrators:** Always pass `project_name` to subagents so they log to the correct project
+
+#### #2 — Reasoning Traces Required
+- **Every `append_entry` MUST include `reasoning` block:**
+  - `why`: goal / decision point
+  - `what`: constraints / alternatives considered
+  - `how`: method / steps / remaining uncertainty
+- **Why:** Creates auditable decision record, prevents shallow "looks good" work
+- **Review enforcement:** Missing why/what/how = reject
+
+#### #3 — MCP Tool Usage Policy
+- **If a tool exists, CALL IT DIRECTLY** — no manual scripting or substitutes
+- **Log intent AFTER** the tool call succeeds or fails
+- **Confirmation flags** (`confirm`, `dry_run`) must be actual tool parameters
+- **File reads:** Use `read_file` (scan_only allowed) — no manual/implicit reads
+- **Why:** Tool calls are the auditable execution layer. Simulating tools = untrusted output
+
+#### #4 — Structure, Cleanliness, Tests
+- **Follow repo structure:** Tests in `/tests` using existing layout
+- **Don't clutter:** No random files, mirror existing patterns
+- **When in doubt:** Search existing code first
 
 ### Repository Root
 **Always pass repo root to Scribe tools:**

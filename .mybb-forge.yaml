@@ -13,6 +13,10 @@ defaults:
   license: "MIT"              # Default license for new plugins
   visibility: "public"        # Default visibility (public or private)
 
+# GitHub settings
+github:
+  repo_prefix: "mybb_playground_"  # Prefix for GitHub repo names (e.g., mybb_playground_invite_system)
+
 # Git subtree mappings for plugin/theme repositories
 subtrees:
   # MyBB MCP server (this project's subtree)

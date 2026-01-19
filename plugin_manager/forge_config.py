@@ -117,6 +117,12 @@ class ForgeConfig:
         """Get default values for new plugins."""
         return self._config.get("defaults", {})
 
+    # GitHub Settings
+    @property
+    def github_repo_prefix(self) -> str:
+        """Get GitHub repo name prefix (e.g., 'mybb_playground_')."""
+        return self._config.get("github", {}).get("repo_prefix", "")
+
     # Subtree Configuration Methods
     def get_subtree_remote(self, subtree_key: str) -> Optional[str]:
         """
@@ -159,3 +165,63 @@ class ForgeConfig:
             "batch_window_ms": 100,
             "enable_cache_refresh": True
         })
+
+    # Default Plugins
+    @property
+    def default_plugins(self) -> list:
+        """Get list of default plugins that ship with the playground."""
+        return self._config.get("default_plugins", [])
+
+    # Gitignore Management
+    GITIGNORE_START_MARKER = "# BEGIN MYBB-FORGE MANAGED - DO NOT EDIT"
+    GITIGNORE_END_MARKER = "# END MYBB-FORGE MANAGED"
+
+    def sync_gitignore(self) -> bool:
+        """
+        Sync .gitignore managed section based on default_plugins config.
+
+        Returns:
+            True if gitignore was updated, False if no changes needed
+        """
+        gitignore_path = self.repo_root / ".gitignore"
+
+        # Build managed section
+        managed_lines = [
+            self.GITIGNORE_START_MARKER,
+            "# Plugin/theme workspaces (nested git repos by default)",
+            "plugin_manager/plugins/public/*/",
+            "plugin_manager/plugins/private/*/",
+            "plugin_manager/themes/*/",
+            "",
+            "# Default plugins (tracked, ship with playground)",
+        ]
+
+        for plugin in self.default_plugins:
+            managed_lines.append(f"!plugin_manager/plugins/public/{plugin}/")
+
+        managed_lines.append(self.GITIGNORE_END_MARKER)
+        managed_section = "\n".join(managed_lines)
+
+        # Read existing gitignore
+        if gitignore_path.exists():
+            content = gitignore_path.read_text()
+        else:
+            content = ""
+
+        # Check if managed section exists
+        if self.GITIGNORE_START_MARKER in content:
+            # Replace existing managed section
+            import re
+            pattern = re.escape(self.GITIGNORE_START_MARKER) + r".*?" + re.escape(self.GITIGNORE_END_MARKER)
+            new_content = re.sub(pattern, managed_section, content, flags=re.DOTALL)
+            if new_content == content:
+                return False  # No changes
+            gitignore_path.write_text(new_content)
+        else:
+            # Append managed section
+            if content and not content.endswith("\n"):
+                content += "\n"
+            content += "\n" + managed_section + "\n"
+            gitignore_path.write_text(content)
+
+        return True
