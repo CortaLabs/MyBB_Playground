@@ -22,7 +22,7 @@
 
 ## What is MyBB Playground?
 
-MyBB Playground connects **Claude Code** directly to your MyBB installation through **85+ MCP tools**. Instead of manually editing PHP files, writing SQL queries, and navigating the admin panel, you can develop plugins and themes using natural language.
+MyBB Playground connects **Claude Code** directly to your MyBB installation through **94+ MCP tools**. Instead of manually editing PHP files, writing SQL queries, and navigating the admin panel, you can develop plugins and themes using natural language.
 
 ```
 You: "Create a plugin that shows user badges based on post count"
@@ -134,7 +134,7 @@ export MYBB_INSTALL_MODE=fresh  # fresh, update, or skip
 MyBB_Playground/
 ├── mybb_mcp/                 # MCP Server (94 tools)
 │   ├── server.py             # Server orchestration (116 lines)
-│   ├── tools_registry.py     # Tool definitions (85 tools)
+│   ├── tools_registry.py     # Tool definitions (94 tools)
 │   ├── handlers/             # Modular tool handlers
 │   │   ├── dispatcher.py     # Central routing
 │   │   ├── templates.py      # 8 template handlers

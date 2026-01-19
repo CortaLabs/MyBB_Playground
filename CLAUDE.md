@@ -5,7 +5,7 @@
 AI-assisted MyBB development toolkit providing MCP tools for Claude Code to interact with MyBB installations. The goal is to make MyBB plugin and theme development accessible through natural language.
 
 **Key Components:**
-- `mybb_mcp/` — Python MCP server exposing 85+ MyBB tools to Claude
+- `mybb_mcp/` — Python MCP server exposing 94+ MyBB tools to Claude
 - `TestForum/` — Local MyBB 1.8.x installation for development
 - `mybb_sync/` — Template/stylesheet disk sync with live file watching
 - `plugin_manager/` — Plugin/theme workspace with deployment and PHP lifecycle execution
@@ -127,7 +127,7 @@ PRIVATE_THEMES_REMOTE=git@github.com:yourname/private-themes.git
 ```
 mybb_mcp/mybb_mcp/
 ├── server.py           # Orchestration layer (116 lines)
-├── tools_registry.py   # Tool definitions (85 tools)
+├── tools_registry.py   # Tool definitions (94 tools)
 ├── config.py           # Env/config loading
 ├── handlers/           # Modular tool handlers (14 modules)
 │   ├── dispatcher.py   # Dictionary-based routing
@@ -146,7 +146,7 @@ mybb_mcp/mybb_mcp/
 └── tools/plugins.py    # Plugin scaffolding + hooks reference
 ```
 
-**Tool Categories (85 tools):**
+**Tool Categories (94 tools):**
 - Templates (9): list, read, write, batch operations, find/replace, outdated detection
 - Themes/Stylesheets (6): list, read, write, create themes
 - Plugins (15): CRUD, hooks discovery, lifecycle management (install/uninstall with PHP execution)
@@ -429,7 +429,7 @@ For all MyBB development work, **prefer these specialized agents over the generi
 
 | Step | Agent | Purpose | When to Use |
 |------|-------|---------|-------------|
-| 1 | `mybb-research-analyst` | Investigate MyBB internals using 85+ MCP tools | Analyzing plugins, hooks, templates before development |
+| 1 | `mybb-research-analyst` | Investigate MyBB internals using 94+ MCP tools | Analyzing plugins, hooks, templates before development |
 | 2 | `mybb-architect` | Design plugins/templates/themes | Creating architecture for new MyBB features |
 | 3 | `mybb-review-agent` | Review MyBB work for workflow compliance | Pre/post-implementation reviews |
 | 4 | `mybb-coder` | Implement plugins/templates | Writing PHP, editing templates via disk sync |
@@ -665,8 +665,8 @@ append_entry(
 | File | Purpose |
 |------|---------|
 | `mybb_mcp/mybb_mcp/server.py` | MCP server orchestration (116 lines) |
-| `mybb_mcp/mybb_mcp/tools_registry.py` | All 85 tool definitions |
-| `mybb_mcp/mybb_mcp/handlers/` | Modular tool handlers (14 modules, 85 handlers) |
+| `mybb_mcp/mybb_mcp/tools_registry.py` | All 94 tool definitions |
+| `mybb_mcp/mybb_mcp/handlers/` | Modular tool handlers (14 modules, 94 handlers) |
 | `mybb_mcp/mybb_mcp/handlers/dispatcher.py` | Dictionary-based tool routing |
 | `mybb_mcp/mybb_mcp/db/connection.py` | Database operations for templates, themes, plugins |
 | `mybb_mcp/mybb_mcp/tools/plugins.py` | Plugin scaffolding templates and hooks reference |
@@ -684,7 +684,7 @@ Comprehensive technical documentation lives in `/docs/wiki/`. Use these for deta
 | Section | Index | What's There |
 |---------|-------|--------------|
 | **Getting Started** | [index](docs/wiki/getting_started/index.md) | Installation, quickstart tutorial, prerequisites |
-| **MCP Tools** | [index](docs/wiki/mcp_tools/index.md) | All 85+ tools with parameters, return formats, examples |
+| **MCP Tools** | [index](docs/wiki/mcp_tools/index.md) | All 94+ tools with parameters, return formats, examples |
 | **Plugin Manager** | [index](docs/wiki/plugin_manager/index.md) | Workspace, deployment, PHP lifecycle, database schema |
 | **Architecture** | [index](docs/wiki/architecture/index.md) | MCP server internals, disk sync, configuration |
 | **Best Practices** | [index](docs/wiki/best_practices/index.md) | Plugin/theme development patterns, security |
@@ -713,7 +713,7 @@ For building production-quality plugins with multiple files, JavaScript, AJAX, A
 docs/wiki/
 ├── index.md                    # Main entry point
 ├── getting_started/            # Installation, quickstart
-├── mcp_tools/                  # Tool reference (85+ tools)
+├── mcp_tools/                  # Tool reference (94+ tools)
 │   ├── index.md               # Overview + tool categories
 │   ├── templates.md           # 9 template tools
 │   ├── themes_stylesheets.md  # 6 theme/style tools
