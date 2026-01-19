@@ -5,9 +5,9 @@
 # ===========================================
 # MyBB Specific
 # ===========================================
-# Database credentials and sensitive config
-TestForum/inc/settings.php
-TestForum/inc/config.php
+# TestForum is downloaded fresh via install.sh - not versioned
+# Custom files (mcp_bridge.php) live in install_files/ and get copied post-extract
+TestForum/
 
 # Cache files (regenerated)
 TestForum/cache/*.php
@@ -25,6 +25,8 @@ TestForum/install/lock
 TestForum/backups/
 *.sql
 *.sql.gz
+
+# Install script logs (now in logs/ directory)
 
 # Admin session files
 TestForum/admin/backups/
@@ -152,7 +154,8 @@ desktop.ini
 # Logs & Debug
 # ===========================================
 *.log
-logs/
+logs/*
+!logs/.gitkeep
 debug/
 *.debug
 
@@ -166,8 +169,13 @@ mcp_server/logs/
 # ===========================================
 # Plugin Manager
 # ===========================================
+# NOTE: Private plugins/themes managed via git subtree should NOT be ignored.
+# Add negation patterns below for subtree-managed items.
 plugin_manager/plugins/private/
 plugin_manager/themes/private/
+
+# Subtree-managed private plugins (tracked for subtree push/pull)
+!plugin_manager/plugins/private/invite_system/
 .plugin_manager/projects.db
 
 # Deployed plugins (source of truth is plugin_manager/)
