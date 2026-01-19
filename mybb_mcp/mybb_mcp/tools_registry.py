@@ -767,55 +767,62 @@ SYNC_TOOLS = [
 ]
 
 
-# ==================== Subtree Tools (Git Subtree Operations) ====================
+# ==================== Plugin Git Tools (Nested Repo Operations) ====================
 
-SUBTREE_TOOLS = [
+PLUGIN_GIT_TOOLS = [
     Tool(
-        name="mybb_subtree_list",
-        description="List all configured subtrees from .mybb-forge.yaml.",
+        name="mybb_plugin_git_list",
+        description="List all plugins and themes that have git initialized.",
         inputSchema={
             "type": "object",
-            "properties": {},
+            "properties": {
+                "type": {"type": "string", "description": "Filter: 'plugins', 'themes', or 'all'", "enum": ["plugins", "themes", "all"]},
+            },
             "required": [],
         },
     ),
     Tool(
-        name="mybb_subtree_add",
-        description="Add a git subtree to the repository. Remote URL will be looked up from .mybb-forge.yaml if not provided.",
+        name="mybb_plugin_git_init",
+        description="Initialize git in a plugin or theme directory. Creates a nested repo (not a subtree).",
         inputSchema={
             "type": "object",
             "properties": {
-                "prefix": {"type": "string", "description": "Subtree prefix path (e.g., 'mybb_mcp')"},
-                "remote": {"type": "string", "description": "Optional remote URL. If not provided, will lookup from .mybb-forge.yaml config."},
-                "branch": {"type": "string", "description": "Branch name (default: main)", "default": "main"},
+                "codename": {"type": "string", "description": "Plugin or theme codename"},
+                "type": {"type": "string", "description": "'plugin' or 'theme'", "enum": ["plugin", "theme"]},
+                "visibility": {"type": "string", "description": "'public' or 'private'", "enum": ["public", "private"]},
+                "remote": {"type": "string", "description": "Remote URL to add as origin"},
+                "branch": {"type": "string", "description": "Initial branch name", "default": "main"},
             },
-            "required": ["prefix"],
+            "required": ["codename"],
         },
     ),
     Tool(
-        name="mybb_subtree_push",
-        description="Push changes to a git subtree remote. Remote URL will be looked up from .mybb-forge.yaml if not provided.",
+        name="mybb_plugin_github_create",
+        description="Create a GitHub repo and link it to a plugin/theme. Requires GitHub CLI (gh) authenticated.",
         inputSchema={
             "type": "object",
             "properties": {
-                "prefix": {"type": "string", "description": "Subtree prefix path (e.g., 'mybb_mcp')"},
-                "remote": {"type": "string", "description": "Optional remote URL. If not provided, will lookup from .mybb-forge.yaml config."},
-                "branch": {"type": "string", "description": "Branch name (default: main)", "default": "main"},
+                "codename": {"type": "string", "description": "Plugin or theme codename"},
+                "type": {"type": "string", "description": "'plugin' or 'theme'", "enum": ["plugin", "theme"]},
+                "visibility": {"type": "string", "description": "'public' or 'private'", "enum": ["public", "private"]},
+                "repo_visibility": {"type": "string", "description": "GitHub repo: 'public' or 'private'", "enum": ["public", "private"]},
+                "repo_name": {"type": "string", "description": "GitHub repo name (default: codename)"},
+                "description": {"type": "string", "description": "Repo description"},
             },
-            "required": ["prefix"],
+            "required": ["codename"],
         },
     ),
     Tool(
-        name="mybb_subtree_pull",
-        description="Pull changes from a git subtree remote. Remote URL will be looked up from .mybb-forge.yaml if not provided.",
+        name="mybb_plugin_git_status",
+        description="Get git status for a plugin or theme.",
         inputSchema={
             "type": "object",
             "properties": {
-                "prefix": {"type": "string", "description": "Subtree prefix path (e.g., 'mybb_mcp')"},
-                "remote": {"type": "string", "description": "Optional remote URL. If not provided, will lookup from .mybb-forge.yaml config."},
-                "branch": {"type": "string", "description": "Branch name (default: main)", "default": "main"},
+                "codename": {"type": "string", "description": "Plugin or theme codename"},
+                "type": {"type": "string", "description": "'plugin' or 'theme'", "enum": ["plugin", "theme"]},
+                "visibility": {"type": "string", "description": "'public' or 'private'", "enum": ["public", "private"]},
             },
-            "required": ["prefix"],
+            "required": ["codename"],
         },
     ),
 ]
@@ -1174,7 +1181,7 @@ ALL_TOOLS = (
     DATABASE_TOOLS +
     CONTENT_TOOLS +
     SYNC_TOOLS +
-    SUBTREE_TOOLS +
+    PLUGIN_GIT_TOOLS +
     SEARCH_TOOLS +
     ADMIN_TOOLS +
     MODERATION_TOOLS +
