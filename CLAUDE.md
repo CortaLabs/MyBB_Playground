@@ -233,16 +233,41 @@ plugin_manager/
 mybb_plugin_git_init(codename, visibility="private")      # Initialize git
 mybb_plugin_github_create(codename, visibility, repo_visibility)  # Create GitHub repo
 mybb_plugin_git_status(codename, visibility)              # Check status
-mybb_plugin_git_commit(codename, visibility, message)     # Commit changes
+mybb_plugin_git_commit(codename, visibility, message)     # Commit all changes
+mybb_plugin_git_commit(codename, visibility, message, files=[...])  # Commit specific files
 mybb_plugin_git_push(codename, visibility)                # Push to remote
 mybb_plugin_git_pull(codename, visibility)                # Pull from remote
 ```
 
-**Commit after each phase:** Research → Architect → Code (per task) → Review fixes → Documentation
+### Orchestrator Commit Discipline
 
-**Parent repo (MyBB Playground):** Use CLI `git commit` for MCP server code, install scripts, docs, and default plugins.
+**Subagents DO NOT commit.** The orchestrator handles all commits at defined gates.
 
-**Plugin/theme repos:** Use MCP git tools above. GitHub repos use prefix from `.mybb-forge.yaml` (e.g., `mybb_playground_my_plugin`).
+| Gate | What to Commit | Where | How |
+|------|---------------|-------|-----|
+| After Research | Scribe research docs | Parent repo | CLI `git commit` |
+| After Architecture | Scribe architecture docs | Parent repo | CLI `git commit` |
+| After Code Phase | Plugin code changes | Plugin repo | MCP `mybb_plugin_git_commit` |
+| After Review Approval | Final cleanup | Both if needed | CLI + MCP |
+
+**Why orchestrator commits, not agents:**
+- Scribe docs (`.scribe/`) are in the parent repo, not plugin workspaces
+- Multiple agents (swarms) would commit each other's work
+- Orchestrator has full visibility to make atomic, meaningful commits
+
+**Parent repo (MyBB Playground):** CLI `git commit` for:
+- Scribe docs (research, architecture, reviews)
+- MCP server code
+- Install scripts, wiki, default plugins
+
+**Plugin/theme repos:** MCP `mybb_plugin_git_commit` for:
+- Plugin PHP code
+- Templates, stylesheets
+- Language files
+
+**Optional `files` parameter:** When committing plugin repos, use `files=[...]` to commit only specific files. Useful if orchestrator needs to commit partial work or avoid committing unrelated changes.
+
+GitHub repos use prefix from `.mybb-forge.yaml` (e.g., `mybb_playground_my_plugin`).
 
 **MyBB Context:**
 - MyBB is 15+ year old PHP forum software with a mature but dated architecture

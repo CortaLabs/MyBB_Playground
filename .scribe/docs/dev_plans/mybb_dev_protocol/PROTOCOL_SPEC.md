@@ -225,15 +225,21 @@ mybb_plugin_git_pull(codename="my_plugin", visibility="private")
 
 ### Commit Discipline
 
-**Commit after each development phase:**
+**ORCHESTRATOR handles all commits. Subagents DO NOT commit.**
 
-| Phase | When to Commit |
-|-------|----------------|
-| Research | After research docs complete |
-| Architect | After architecture docs approved |
-| Code | After each task package completed |
-| Review | After fixes from review |
-| Documentation | After README/docs finalized |
+**Why:**
+- Scribe docs (`.scribe/`) live in the parent repo, not plugin workspaces
+- Research/Architect swarms would commit each other's work
+- Orchestrator has full visibility to make atomic, meaningful commits
+
+**Orchestrator Commit Gates:**
+
+| Gate | What | Where | How |
+|------|------|-------|-----|
+| After Research Phase | Scribe research docs | Parent repo | CLI `git commit` |
+| After Architecture Phase | Scribe architecture docs | Parent repo | CLI `git commit` |
+| After Code Phase | Plugin code changes | Plugin repo | MCP `mybb_plugin_git_commit` |
+| After Review Approval | Final cleanup | Both if needed | CLI + MCP |
 
 **Commit Message Format:**
 ```
@@ -256,11 +262,13 @@ chore: Update dependencies
 
 | Repository | Commit Method | What's Tracked |
 |------------|---------------|----------------|
-| MyBB Playground (parent) | CLI: `git commit` | MCP server, install scripts, docs, default plugins |
-| Private plugins | MCP: `mybb_plugin_git_commit` | Plugin code, templates, assets |
+| MyBB Playground (parent) | CLI: `git commit` | Scribe docs, MCP server, install scripts, wiki, default plugins |
+| Private plugins | MCP: `mybb_plugin_git_commit` | Plugin PHP code, templates, language files |
 | Private themes | MCP: `mybb_plugin_git_commit` | Theme stylesheets, templates |
 
-**Rule:** Use MCP git tools for plugin/theme repos. Use CLI git for the parent repo.
+**Optional `files` parameter:** Use `mybb_plugin_git_commit(..., files=[...])` to commit only specific files when needed.
+
+**Rule:** Orchestrator uses CLI git for parent repo, MCP git tools for plugin/theme repos.
 
 ### .mybb-forge.yaml Configuration
 

@@ -389,6 +389,9 @@ async def handle_plugin_git_commit(args: dict, db: Any, config: Any, sync_servic
             - message (str, required): Commit message
             - type (str, optional): "plugin" or "theme" (default: "plugin")
             - visibility (str, optional): "public" or "private" (default: "public", plugins only)
+            - files (list, optional): Specific files to stage and commit (relative to plugin root).
+                                      If omitted, stages all changes (-A).
+                                      Useful when multiple agents work on same repo.
         db: MyBBDatabase instance (unused)
         config: Server configuration
         sync_service: Disk sync service (unused)
@@ -406,6 +409,7 @@ async def handle_plugin_git_commit(args: dict, db: Any, config: Any, sync_servic
 
     item_type = args.get("type", "plugin")
     visibility = args.get("visibility", "public")
+    files = args.get("files")  # Optional: list of specific files to commit
 
     # Get path
     if item_type == "theme":
@@ -425,25 +429,69 @@ async def handle_plugin_git_commit(args: dict, db: Any, config: Any, sync_servic
         if not status.stdout.strip():
             return f"Nothing to commit for '{codename}' - working tree clean."
 
-        # Stage all changes
-        run_git(path, "add", "-A")
+        # Stage changes
+        if files:
+            # Stage only specified files
+            staged_files = []
+            missing_files = []
+            for f in files:
+                file_path = path / f
+                if file_path.exists() or f in status.stdout:  # exists or is tracked (deleted)
+                    result = run_git(path, "add", f)
+                    if result.returncode == 0:
+                        staged_files.append(f)
+                    else:
+                        missing_files.append(f)
+                else:
+                    missing_files.append(f)
+
+            if not staged_files:
+                return f"Error: None of the specified files could be staged:\n- " + "\n- ".join(missing_files)
+
+            if missing_files:
+                warning = f"\n\n⚠️ Warning: Could not stage: {', '.join(missing_files)}"
+            else:
+                warning = ""
+        else:
+            # Stage all changes
+            run_git(path, "add", "-A")
+            staged_files = None  # indicates all files
+            warning = ""
 
         # Commit
         result = run_git(path, "commit", "-m", message)
         if result.returncode != 0:
+            # Check if nothing was staged
+            if "nothing to commit" in result.stdout.lower() or "nothing to commit" in result.stderr.lower():
+                return f"Nothing to commit for '{codename}' - specified files have no changes."
             return f"Error committing:\n```\n{result.stderr}\n```"
 
         # Get commit hash
         hash_result = run_git(path, "rev-parse", "--short", "HEAD")
         commit_hash = hash_result.stdout.strip()
 
-        return "\n".join([
+        output = [
             f"✅ Committed changes to '{codename}'",
             f"- **Commit:** `{commit_hash}`",
             f"- **Message:** {message}",
-            "",
-            "Use `mybb_plugin_git_push` to push to remote."
-        ])
+        ]
+
+        if staged_files:
+            output.append(f"- **Files:** {len(staged_files)} file(s)")
+            for f in staged_files[:5]:  # Show first 5
+                output.append(f"  - `{f}`")
+            if len(staged_files) > 5:
+                output.append(f"  - ... and {len(staged_files) - 5} more")
+        else:
+            output.append("- **Files:** all changes")
+
+        output.append("")
+        output.append("Use `mybb_plugin_git_push` to push to remote.")
+
+        if warning:
+            output.append(warning)
+
+        return "\n".join(output)
 
     except subprocess.TimeoutExpired:
         return "Error: git command timed out"

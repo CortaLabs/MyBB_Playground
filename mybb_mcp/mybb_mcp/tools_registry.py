@@ -827,7 +827,7 @@ PLUGIN_GIT_TOOLS = [
     ),
     Tool(
         name="mybb_plugin_git_commit",
-        description="Commit changes in a plugin or theme repository. Stages all changes and commits with message.",
+        description="Commit changes in a plugin or theme repository. By default stages all changes. Use 'files' param to commit only specific files (useful for agent swarms).",
         inputSchema={
             "type": "object",
             "properties": {
@@ -835,6 +835,7 @@ PLUGIN_GIT_TOOLS = [
                 "message": {"type": "string", "description": "Commit message"},
                 "type": {"type": "string", "description": "'plugin' or 'theme'", "enum": ["plugin", "theme"]},
                 "visibility": {"type": "string", "description": "'public' or 'private'", "enum": ["public", "private"]},
+                "files": {"type": "array", "items": {"type": "string"}, "description": "Specific files to commit (relative to plugin root). If omitted, commits all changes."},
             },
             "required": ["codename", "message"],
         },
