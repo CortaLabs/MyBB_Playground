@@ -101,7 +101,15 @@ Restart Claude Code to load the MCP server.
 ```
 MyBB_Playground/
 ├── mybb_mcp/                 # MCP Server (85+ tools)
-│   ├── server.py             # Tool handlers
+│   ├── server.py             # Server orchestration (116 lines)
+│   ├── tools_registry.py     # Tool definitions (85 tools)
+│   ├── handlers/             # Modular tool handlers
+│   │   ├── dispatcher.py     # Central routing
+│   │   ├── templates.py      # 8 template handlers
+│   │   ├── themes.py         # 5 theme handlers
+│   │   ├── plugins.py        # 15 plugin handlers
+│   │   ├── content.py        # 16 forum/thread/post handlers
+│   │   └── ...               # 14 modules total
 │   ├── db/                   # Database operations
 │   ├── sync/                 # Disk sync system
 │   └── tools/                # Plugin scaffolding

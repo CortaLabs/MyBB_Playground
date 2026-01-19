@@ -338,6 +338,84 @@ Get full status of the hello_banner plugin
 
 ---
 
+### mybb_subtree_list
+
+**Purpose:** List configured git subtrees for plugin/theme distribution
+
+**Parameters:** None
+
+**Returns:**
+- Configured subtrees from `.mybb-forge.yaml`
+- Remote URLs (from `.mybb-forge.env`)
+- Branch information
+
+**Example:**
+```
+List all configured git subtrees
+```
+
+---
+
+### mybb_subtree_add
+
+**Purpose:** Add a git subtree configuration for a plugin or theme
+
+**Parameters:**
+- `path` (required) - Workspace path (e.g., `plugin_manager/plugins/public/my_plugin`)
+- `remote` (required) - Remote name from `.mybb-forge.env` (e.g., `PRIVATE_PLUGINS_REMOTE`)
+- `branch` (optional) - Branch name (default: `main`)
+
+**Returns:**
+- Success/failure message
+- Configuration added to `.mybb-forge.yaml`
+
+**Example:**
+```
+Add subtree for my_plugin pointing to PRIVATE_PLUGINS_REMOTE
+```
+
+---
+
+### mybb_subtree_push
+
+**Purpose:** Push a plugin/theme to its configured git subtree remote
+
+**Parameters:**
+- `path` (required) - Workspace path matching configured subtree
+
+**Returns:**
+- Success/failure message
+- Git subtree push output
+
+**Behavior:** Executes `git subtree push` to sync workspace with remote repository
+
+**Example:**
+```
+Push changes in plugin_manager/plugins/public/my_plugin to its remote
+```
+
+---
+
+### mybb_subtree_pull
+
+**Purpose:** Pull updates from a git subtree remote into workspace
+
+**Parameters:**
+- `path` (required) - Workspace path matching configured subtree
+
+**Returns:**
+- Success/failure message
+- Git subtree pull output
+
+**Behavior:** Executes `git subtree pull` to sync remote changes into workspace
+
+**Example:**
+```
+Pull updates from remote into plugin_manager/plugins/public/my_plugin
+```
+
+---
+
 ## Lifecycle Comparison
 
 ### Cache-Only Operations

@@ -167,7 +167,7 @@ class PathRouter:
             path: Full path to file
             visibility: 'public' or 'private'
             codename: Plugin codename
-            subdir: Subdirectory ('templates', 'src', 'languages')
+            subdir: Subdirectory ('templates', 'templates_themes', 'src', 'languages')
             parts: Path parts tuple
             relative_path: Original relative path
 
@@ -182,6 +182,20 @@ class PathRouter:
                 visibility=visibility,
                 file_type='template',
                 template_name=path.stem,
+                relative_path=str(Path(*parts[3:])),
+                raw_path=relative_path
+            )
+
+        # Theme-specific plugin templates: plugins/{vis}/{name}/templates_themes/{theme_name}/*.html
+        if subdir == 'templates_themes' and path.suffix == '.html' and len(parts) >= 6:
+            theme_name = parts[4]  # Extract theme name from path
+            return ParsedPath(
+                type='plugin_template',
+                project_name=codename,
+                visibility=visibility,
+                file_type='template',
+                template_name=path.stem,
+                theme_name=theme_name,  # Theme-specific template
                 relative_path=str(Path(*parts[3:])),
                 raw_path=relative_path
             )

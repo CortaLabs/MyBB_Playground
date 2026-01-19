@@ -23,6 +23,13 @@ plugins/
 │   │   │   └── languages/
 │   │   │       └── english/
 │   │   │           └── plugin_one.lang.php # Language file
+│   │   ├── templates/                      # Plugin templates (sid=-2, master)
+│   │   │   └── plugin_one_welcome.html     # Template naming: {codename}_{name}
+│   │   ├── templates_themes/               # Theme-specific template overrides
+│   │   │   ├── Default Templates/
+│   │   │   │   └── plugin_one_welcome.html # Override for Default theme
+│   │   │   └── Mobile Templates/
+│   │   │       └── plugin_one_welcome.html # Override for Mobile theme
 │   │   ├── jscripts/                       # Optional JavaScript
 │   │   ├── images/                         # Optional images
 │   │   ├── meta.json                       # Project metadata
@@ -35,6 +42,13 @@ plugins/
 ```
 
 **Visibility:** 'public' or 'private' (affects workspace location only)
+
+**Template Directories (v2 Disk-First Sync):**
+- `templates/` — Master templates (sid=-2) shared across all themes
+- `templates_themes/{Theme Name}/` — Theme-specific template overrides synced to that template set's sid
+- Template naming convention: `{codename}_{template_name}.html` (e.g., `myplugin_welcome.html`)
+- File watcher automatically syncs template changes to database
+- Templates deployed during `mybb_plugin_install()` along with PHP files
 
 ### Theme Workspace
 

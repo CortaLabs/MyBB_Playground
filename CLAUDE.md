@@ -41,6 +41,15 @@ AI-assisted MyBB development toolkit providing MCP tools for Claude Code to inte
 - Read the docs (CLAUDE.md, wiki) before assuming infrastructure is broken
 - Ask the user before taking destructive action
 
+**Extraction means EXTRACTION, not duplication:**
+- When told to "extract" code from File A to File B, you MUST:
+  1. Copy the code to File B
+  2. REMOVE the code from File A
+  3. Wire up imports/references so File A uses File B
+- If you only copy without removing, you've created DUPLICATE CODE
+- Extraction is a refactoring operation - the end result should have the SAME total lines, just reorganized
+- Never tell the orchestrator extraction is "complete" if the source file still contains the extracted code
+
 ## Development Environment
 
 ### Prerequisites
@@ -73,18 +82,71 @@ MYBB_ROOT=/home/austin/projects/MyBB_Playground/TestForum
 MYBB_URL=http://localhost:8022
 ```
 
+### Configuration Files (MyBB Forge v2)
+
+**ForgeConfig System** provides developer metadata and project defaults:
+
+**`.mybb-forge.yaml`** (checked into version control):
+```yaml
+developer:
+  name: "Your Name"
+  website: "https://yoursite.com"
+  email: "you@example.com"
+
+defaults:
+  compatibility: "18*"        # MyBB version compatibility
+  license: "MIT"              # Default license for new plugins
+  visibility: "public"        # public or private workspace
+
+subtrees:
+  plugin_manager/plugins/public/my_plugin:
+    remote: PRIVATE_PLUGINS_REMOTE  # References .mybb-forge.env
+    branch: main
+
+sync:
+  debounce_ms: 100            # File watcher debounce (default: 100)
+  batch_window_ms: 100        # Batch window for updates (default: 100)
+  enable_cache_refresh: true  # Template set caching (default: true)
+```
+
+**`.mybb-forge.env`** (gitignored, for private remotes):
+```bash
+PRIVATE_PLUGINS_REMOTE=git@github.com:yourname/private-plugins.git
+PRIVATE_THEMES_REMOTE=git@github.com:yourname/private-themes.git
+```
+
+**Usage:**
+- Developer info auto-populates `meta.json` for new plugins
+- Subtrees enable private plugin repositories via git subtree
+- Sync settings control file watcher behavior and caching
+- Use `MYBB_SYNC_DISABLE_CACHE=1` env var to disable template set caching during development
+
 ## Architecture
 
 ### MCP Server (`mybb_mcp/`)
 ```
-mybb_mcp/
-├── server.py           # Main server, all tool handlers
+mybb_mcp/mybb_mcp/
+├── server.py           # Orchestration layer (116 lines)
+├── tools_registry.py   # Tool definitions (85 tools)
 ├── config.py           # Env/config loading
+├── handlers/           # Modular tool handlers (14 modules)
+│   ├── dispatcher.py   # Dictionary-based routing
+│   ├── templates.py    # 8 handlers
+│   ├── themes.py       # 5 handlers
+│   ├── plugins.py      # 15 handlers
+│   ├── content.py      # 16 handlers (forums/threads/posts)
+│   ├── users.py        # 6 handlers
+│   ├── moderation.py   # 8 handlers
+│   ├── search.py       # 4 handlers
+│   ├── admin.py        # 11 handlers
+│   ├── tasks.py        # 6 handlers
+│   ├── sync.py         # 5 handlers
+│   └── database.py     # 1 handler
 ├── db/connection.py    # MySQL wrapper with MyBB-specific methods
 └── tools/plugins.py    # Plugin scaffolding + hooks reference
 ```
 
-**Tool Categories (85+ tools):**
+**Tool Categories (85 tools):**
 - Templates (9): list, read, write, batch operations, find/replace, outdated detection
 - Themes/Stylesheets (6): list, read, write, create themes
 - Plugins (15): CRUD, hooks discovery, lifecycle management (install/uninstall with PHP execution)
@@ -139,6 +201,12 @@ Core files will be overwritten on MyBB upgrades. Hooks and plugins are the corre
 - Use `mybb_plugin_install(codename)` to deploy — this runs actual PHP lifecycle (_install, _activate)
 - Don't manually copy files to TestForum — the installer handles file deployment and tracking
 - Each plugin has `meta.json` for metadata — see [Plugin Manager docs](docs/wiki/plugin_manager/workspace.md)
+- **Plugin Templates (v2 Disk-First Sync):**
+  - Create templates in workspace: `templates/{template_name}.html` (syncs to sid=-2, master templates)
+  - For theme-specific overrides: `templates_themes/{Theme Name}/{template_name}.html`
+  - Template naming: `{codename}_{template_name}` (e.g., `myplugin_welcome.html`)
+  - File watcher auto-syncs changes to database when editing on disk
+  - Templates are deployed during `mybb_plugin_install()` along with PHP files
 
 **Theme Development:**
 - Themes live in workspace: `plugin_manager/themes/`
@@ -241,9 +309,34 @@ Projects are created per-feature/component:
 
 Use `mcp__scribe__list_projects(root="/home/austin/projects/MyBB_Playground")` to see all projects in this repo.
 
+### Development Protocol (REQUIRED)
+
+**Full Specification:** `.scribe/docs/dev_plans/mybb_dev_protocol/PROTOCOL_SPEC.md`
+
+All non-trivial development follows this 6-phase workflow:
+
+```
+SPEC → Research → Architect → Code → Review → Documentation
+```
+
+| Phase | Agent | Purpose |
+|-------|-------|---------|
+| **SPEC** | User + Orchestrator | Define what we're building, create Scribe project |
+| **Research** | `mybb-research-analyst` (haiku) | Gather context, verify against code |
+| **Architect** | `mybb-architect` (opus) | Create ARCHITECTURE_GUIDE.md, PHASE_PLAN.md, CHECKLIST.md |
+| **Code** | `mybb-coder` (sonnet) | Execute bounded task packages |
+| **Review** | `mybb-review-agent` (sonnet) | Validate against plan (≥93% to pass) |
+| **Documentation** | Coder/Orchestrator | Fill README, update wiki, no TODOs at release |
+
+**Critical Rules:**
+- **Sequential coders** if tasks touch same files; **concurrent** if different files
+- **No hacky workarounds** — work within MyBB's systems
+- **Documentation is mandatory** — README must have all sections filled
+- **Plugin Manager workflow required** — never create files manually
+
 ### Scribe Subagent Workflow (PROTOCOL)
 
-For non-trivial features, follow the 5-step PROTOCOL workflow using specialized subagents:
+For non-trivial features, follow the 6-step PROTOCOL workflow using specialized subagents:
 
 | Step | Agent | Model | Purpose |
 |------|-------|-------|---------|
@@ -502,10 +595,13 @@ append_entry(
 
 | File | Purpose |
 |------|---------|
-| `mybb_mcp/server.py` | Main MCP server with all tool implementations |
-| `mybb_mcp/db/connection.py` | Database operations for templates, themes, plugins |
-| `mybb_mcp/tools/plugins.py` | Plugin scaffolding templates and hooks reference |
-| `mybb_mcp/config.py` | Configuration loading from .env |
+| `mybb_mcp/mybb_mcp/server.py` | MCP server orchestration (116 lines) |
+| `mybb_mcp/mybb_mcp/tools_registry.py` | All 85 tool definitions |
+| `mybb_mcp/mybb_mcp/handlers/` | Modular tool handlers (14 modules, 85 handlers) |
+| `mybb_mcp/mybb_mcp/handlers/dispatcher.py` | Dictionary-based tool routing |
+| `mybb_mcp/mybb_mcp/db/connection.py` | Database operations for templates, themes, plugins |
+| `mybb_mcp/mybb_mcp/tools/plugins.py` | Plugin scaffolding templates and hooks reference |
+| `mybb_mcp/mybb_mcp/config.py` | Configuration loading from .env |
 | `.env` | Database credentials and paths (gitignored) |
 | `TestForum/inc/plugins/` | Where plugins are installed |
 | `TestForum/inc/languages/english/` | Language files for plugins |

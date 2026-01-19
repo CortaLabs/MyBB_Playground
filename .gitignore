@@ -113,6 +113,9 @@ secrets.json
 credentials.json
 config.local.json
 
+# MyBB Forge configuration (contains private repository URLs)
+.mybb-forge.env
+
 # ===========================================
 # IDE & Editor
 # ===========================================
@@ -167,6 +170,20 @@ plugin_manager/plugins/private/
 plugin_manager/themes/private/
 .plugin_manager/projects.db
 
+# Deployed plugins (source of truth is plugin_manager/)
+# These files are copies deployed from workspace and shouldn't be tracked
+TestForum/inc/plugins/*.php
+!TestForum/inc/plugins/hello.php  # Keep MyBB default example plugin
+TestForum/inc/plugins/*/
+
+# Deployed plugin language files
+TestForum/inc/languages/english/*.lang.php
+!TestForum/inc/languages/english/admin/  # Keep admin defaults
+
+# Deployed plugin assets (jscripts and images overlays)
+TestForum/jscripts/*/
+TestForum/images/*/
+
 # ===========================================
 # Docker (if we use it)
 # ===========================================
@@ -181,3 +198,15 @@ coverage/
 test-results/
 
 read_only_code
+
+# ===========================================
+# Invite System Plugin (managed via git subtree)
+# ===========================================
+TestForum/inc/plugins/invite_system.php
+TestForum/inc/plugins/invite_system/
+TestForum/inc/languages/english/invite_system.lang.php
+TestForum/inc/languages/english/admin/invite_system.lang.php
+TestForum/inc/tasks/invite_*.php
+mybb_sync/template_sets/*/Invite System Templates/
+.scribe/docs/dev_plans/invite_system/
+.scribe/docs/dev_plans/invite-system/

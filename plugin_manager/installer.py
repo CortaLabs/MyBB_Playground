@@ -43,6 +43,10 @@ class PluginInstaller:
 
     Tracks all deployed files and directories for complete cleanup on uninstall.
     Backups are stored OUTSIDE TestForum in the workspace/backups/ directory.
+
+    TODO: Consider auto-updating .gitignore on first deployment to ignore deployed
+    plugin files in TestForum (since source of truth is plugin_manager/). Currently
+    handled manually via .gitignore patterns for TestForum/inc/plugins/*.php, etc.
     """
 
     def __init__(
@@ -75,6 +79,8 @@ class PluginInstaller:
         - workspace/inc/ -> TestForum/inc/
         - workspace/jscripts/ -> TestForum/jscripts/ (if exists)
         - workspace/images/ -> TestForum/images/ (if exists)
+        - workspace/templates/ -> TestForum/inc/plugins/{codename}/templates/ (if exists)
+        - workspace/templates_themes/ -> TestForum/inc/plugins/{codename}/templates_themes/ (if exists)
 
         All deployed files and created directories are tracked in the database
         for complete cleanup on uninstall. Backups are stored OUTSIDE TestForum.
@@ -156,6 +162,28 @@ class PluginInstaller:
         if images_src.exists() and any(images_src.iterdir()):
             files, dirs, backups = self._overlay_directory(
                 images_src, self.mybb_root / "images", codename
+            )
+            all_files.extend(files)
+            all_dirs.extend(dirs)
+            all_backups.extend(backups)
+
+        # Overlay templates/ if exists (plugin-specific templates)
+        templates_src = workspace_path / "templates"
+        if templates_src.exists() and any(templates_src.iterdir()):
+            templates_dest = self.mybb_root / "inc" / "plugins" / codename / "templates"
+            files, dirs, backups = self._overlay_directory(
+                templates_src, templates_dest, codename
+            )
+            all_files.extend(files)
+            all_dirs.extend(dirs)
+            all_backups.extend(backups)
+
+        # Overlay templates_themes/ if exists (theme-specific template overrides)
+        templates_themes_src = workspace_path / "templates_themes"
+        if templates_themes_src.exists() and any(templates_themes_src.iterdir()):
+            templates_themes_dest = self.mybb_root / "inc" / "plugins" / codename / "templates_themes"
+            files, dirs, backups = self._overlay_directory(
+                templates_themes_src, templates_themes_dest, codename
             )
             all_files.extend(files)
             all_dirs.extend(dirs)

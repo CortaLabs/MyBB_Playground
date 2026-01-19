@@ -1,0 +1,32 @@
+# MyBB Forge Configuration Example
+# Copy this to .mybb-forge.yaml and customize with your information
+
+# Developer information - auto-fills plugin metadata
+developer:
+  name: "Your Name"
+  website: "https://example.com"
+  email: "you@example.com"
+
+# Default values for new plugins
+defaults:
+  compatibility: "18*"        # MyBB version compatibility (18* = 1.8.x)
+  license: "GPL-3.0"          # Default license for new plugins
+  visibility: "public"        # Default visibility (public or private)
+
+# Git subtree mappings for private plugin/theme repositories
+# Uncomment and configure if you need private repos
+# subtrees:
+#   plugin_manager/plugins/private:
+#     remote_env: PRIVATE_PLUGINS_REMOTE  # References .mybb-forge.env
+#     branch: main
+#     squash: true
+#   plugin_manager/themes/private:
+#     remote_env: PRIVATE_THEMES_REMOTE
+#     branch: main
+#     squash: true
+
+# Disk sync optimization settings
+sync:
+  debounce_ms: 100              # Milliseconds to wait before syncing changes
+  batch_window_ms: 100          # Milliseconds to batch multiple changes together
+  enable_cache_refresh: true    # Automatically refresh MyBB cache after sync

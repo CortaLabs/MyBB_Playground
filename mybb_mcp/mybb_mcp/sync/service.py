@@ -14,6 +14,7 @@ from .router import PathRouter
 from .groups import TemplateGroupManager
 from .templates import TemplateExporter, TemplateImporter
 from .stylesheets import StylesheetExporter, StylesheetImporter
+from .plugin_templates import PluginTemplateImporter
 from .cache import CacheRefresher
 from .watcher import FileWatcher
 
@@ -67,14 +68,17 @@ class DiskSyncService:
         self.cache_refresher = CacheRefresher(mybb_url)
         self.template_importer = TemplateImporter(db)
         self.stylesheet_importer = StylesheetImporter(db)
+        self.plugin_template_importer = PluginTemplateImporter(db)
 
         # Initialize file watcher (not started by default)
         self.watcher = FileWatcher(
             config.sync_root,
             self.template_importer,
             self.stylesheet_importer,
+            self.plugin_template_importer,
             self.cache_refresher,
-            self.router
+            self.router,
+            workspace_root=workspace_root
         )
 
     async def export_template_set(self, set_name: str) -> dict[str, Any]:

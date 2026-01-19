@@ -1,50 +1,84 @@
 # MCP Server Architecture
 
-The MyBB MCP Server (`mybb_mcp/`) is a Python-based Model Context Protocol server that exposes MyBB operations to Claude Code through 85+ tools. This document covers server initialization, tool registration, database connection management, and the connection pooling strategy.
+The MyBB MCP Server (`mybb_mcp/`) is a Python-based Model Context Protocol server that exposes MyBB operations to Claude Code through 85 tools. This document covers server initialization, the **modular handler architecture**, database connection management, and the connection pooling strategy.
+
+## Architecture Overview
+
+The MCP server uses a **modular handler architecture** that separates concerns:
+
+```
+mybb_mcp/mybb_mcp/
+├── server.py           # Orchestration layer (116 lines)
+├── tools_registry.py   # Tool definitions (1,105 lines, 85 tools)
+├── config.py           # Configuration loading
+├── handlers/           # Modular tool handlers (14 modules)
+│   ├── __init__.py     # Exports dispatch_tool, HANDLER_REGISTRY
+│   ├── dispatcher.py   # Central routing + registry population
+│   ├── common.py       # Shared utilities (format_*, etc.)
+│   ├── templates.py    # 8 template handlers
+│   ├── themes.py       # 5 theme handlers
+│   ├── plugins.py      # 15 plugin handlers
+│   ├── content.py      # 16 forum/thread/post handlers
+│   ├── users.py        # 6 user handlers
+│   ├── moderation.py   # 8 moderation handlers
+│   ├── search.py       # 4 search handlers
+│   ├── admin.py        # 11 admin handlers
+│   ├── tasks.py        # 6 task handlers
+│   ├── sync.py         # 5 disk sync handlers
+│   └── database.py     # 1 database handler
+├── db/                 # Database operations
+├── sync/               # Disk sync service
+└── tools/              # Plugin scaffolding
+```
+
+**Key Metrics:**
+- **server.py**: 116 lines (orchestration only)
+- **tools_registry.py**: 1,105 lines (85 tool definitions)
+- **handlers/**: 14 modules with 85 handlers total
 
 ## Server Initialization
 
-The server is initialized through the `create_server()` function in `server.py` (lines 28-1146).
+The server is initialized through the `create_server()` function in `server.py`.
 
 ### Initialization Sequence
 
 ```python
-# Initialization order (server.py lines 28-1146):
+# Initialization order (server.py):
 1. Create MCP Server instance with name "mybb-mcp"
 2. Initialize MyBBDatabase with config
 3. Initialize DiskSyncService:
-   - sync_root: {mybb_root}/mybb_sync/
+   - sync_root: {mybb_root}/../mybb_sync/
    - Automatically starts file watcher
-4. Declare all_tools array (combine categories)
-5. Register all 85+ tools
-6. Setup async handlers:
-   - @server.list_tools() → returns all_tools
-   - @server.call_tool(name, arguments) → routes to handle_tool()
+4. Import ALL_TOOLS from tools_registry
+5. Import dispatch_tool from handlers
+6. Log handler registry status
+7. Setup async handlers:
+   - @server.list_tools() → returns ALL_TOOLS
+   - @server.call_tool(name, arguments) → calls dispatch_tool()
 ```
 
 ### Server Instance Creation
 
 ```python
-# Create MCP server
+from .tools_registry import ALL_TOOLS
+from .handlers import dispatch_tool, HANDLER_REGISTRY
+
 server = Server("mybb-mcp")
-
-# Load configuration
-config = load_config()  # From config.py
-
-# Initialize database connection
+config = load_config()
 db = MyBBDatabase(config.db)
 
-# Initialize disk sync service
-sync_service = DiskSyncService(
-    db=db,
-    sync_root=Path(config.mybb.root) / "mybb_sync"
-)
+# Initialize disk sync
+sync_root = config.mybb_root.parent / "mybb_sync"
+sync_service = DiskSyncService(db, SyncConfig(sync_root=sync_root), config.mybb_url)
+sync_service.start_watcher()
+
+logger.info(f"Handler registry loaded: {len(HANDLER_REGISTRY)} handlers")
 ```
 
 **Key Points:**
 - Server name is hardcoded as `"mybb-mcp"`
-- Configuration loaded from environment variables via `config.py`
-- Database connection established before tool registration
+- Tool definitions imported from `tools_registry.py`
+- Handler dispatch imported from `handlers/` module
 - DiskSyncService auto-starts file watcher in development mode
 
 ## Tool Registration
@@ -127,24 +161,67 @@ The server provides **85+ tools** across 9 categories:
 
 **Additional categories:** Moderation (6 tools), User Management (5 tools), Settings (4 tools), Cache (4 tools), Statistics (2 tools), Disk Sync (6 tools)
 
-### Tool Handler System
+### Tool Handler System (Modular Dispatcher)
 
-The `handle_tool()` function routes tool calls to appropriate handlers:
+Tool calls are routed through a **dictionary-based dispatcher** in `handlers/dispatcher.py`:
 
 ```python
-@server.call_tool()
-async def handle_tool(name: str, arguments: dict) -> list[TextContent]:
-    # Route tool calls by name
-    # Dispatch to appropriate handler
-    # All returns formatted as Markdown text
-    # Errors caught and returned as user-friendly messages
+# handlers/dispatcher.py
+HANDLER_REGISTRY: dict[str, Callable] = {}
+
+async def dispatch_tool(
+    name: str,
+    args: dict,
+    db: MyBBDatabase,
+    config: MyBBConfig,
+    sync_service: DiskSyncService
+) -> str:
+    """Route tool call to appropriate handler."""
+    if name not in HANDLER_REGISTRY:
+        return f"Unknown tool: {name}"
+
+    handler = HANDLER_REGISTRY[name]
+    return await handler(args, db, config, sync_service)
+```
+
+**Handler Registration Pattern:**
+```python
+# handlers/templates.py
+from .dispatcher import HANDLER_REGISTRY
+
+async def handle_mybb_list_templates(args, db, config, sync_service) -> str:
+    sid = args.get("sid")
+    search = args.get("search")
+    templates = db.list_templates(sid=sid, search=search)
+    return format_template_list(templates)
+
+# Register handler
+HANDLER_REGISTRY["mybb_list_templates"] = handle_mybb_list_templates
 ```
 
 **Key Characteristics:**
+- Dictionary-based routing (O(1) lookup vs O(n) if-elif chain)
 - All tools return formatted Markdown strings
-- Errors are caught and returned as user-friendly messages
+- Consistent handler signature: `(args, db, config, sync_service) -> str`
+- Errors caught and returned as user-friendly messages
 - No exceptions propagate to MCP client
 - Database queries use parameterized statements
+
+### Handler Module Reference
+
+| Module | Handlers | Tools |
+|--------|----------|-------|
+| `templates.py` | 8 | list_template_sets, list_templates, read_template, write_template, list_template_groups, template_find_replace, template_batch_read, template_batch_write |
+| `themes.py` | 5 | list_themes, list_stylesheets, read_stylesheet, write_stylesheet, create_theme |
+| `plugins.py` | 15 | list_plugins, read_plugin, create_plugin, analyze_plugin, list_hooks, hooks_discover, hooks_usage, plugin_list_installed, plugin_info, plugin_activate, plugin_deactivate, plugin_is_installed, plugin_install, plugin_uninstall, plugin_status |
+| `content.py` | 16 | forum_list, forum_read, forum_create, forum_update, forum_delete, thread_list, thread_read, thread_create, thread_update, thread_delete, thread_move, post_list, post_read, post_create, post_update, post_delete |
+| `users.py` | 6 | user_get, user_list, user_update_group, user_ban, user_unban, usergroup_list |
+| `moderation.py` | 8 | mod_close_thread, mod_stick_thread, mod_approve_thread, mod_approve_post, mod_soft_delete_thread, mod_soft_delete_post, modlog_list, modlog_add |
+| `search.py` | 4 | search_posts, search_threads, search_users, search_advanced |
+| `admin.py` | 11 | setting_get, setting_set, setting_list, settinggroup_list, cache_read, cache_rebuild, cache_list, cache_clear, stats_forum, stats_board, template_outdated |
+| `tasks.py` | 6 | task_list, task_get, task_enable, task_disable, task_update_nextrun, task_run_log |
+| `sync.py` | 5 | sync_export_templates, sync_export_stylesheets, sync_start_watcher, sync_stop_watcher, sync_status |
+| `database.py` | 1 | db_query |
 
 ## Database Connection Management
 
@@ -601,5 +678,5 @@ except Exception as e:
 
 ---
 
-*Last Updated: 2026-01-18*
-*Based on: RESEARCH_MCP_SERVER_ARCHITECTURE_20250118_0811.md (sections 5-6)*
+*Last Updated: 2026-01-19*
+*Based on: MyBB Forge v2 Phase 3 Modularization (3,794 → 116 lines)*

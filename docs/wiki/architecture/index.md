@@ -15,10 +15,15 @@ MyBB Playground consists of three primary components:
 ┌─────────────────────────────────────────────────────────────┐
 │              MyBB MCP Server (mybb_mcp/)                     │
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐      │
-│  │ Tool Registry│  │ DB Connection│  │ Disk Sync    │      │
-│  │  (85+ tools) │  │   (pooling)  │  │   Service    │      │
+│  │ Tool Registry│  │  Dispatcher  │  │ Disk Sync    │      │
+│  │  (85 tools)  │  │ (14 modules) │  │   Service    │      │
 │  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘      │
-│         └──────────────────┴──────────────────┘              │
+│         └──────────────────┼──────────────────┘              │
+│                            ↓                                 │
+│  ┌─────────────────────────────────────────────────────────┐│
+│  │ handlers/: templates, themes, plugins, content, users,  ││
+│  │            search, moderation, admin, tasks, sync, db   ││
+│  └─────────────────────────────────────────────────────────┘│
 └───────────────────────────┬─────────────────────────────────┘
                             │
               ┌─────────────┴─────────────┐
@@ -57,13 +62,14 @@ MyBB Playground consists of three primary components:
 ## Architecture Documents
 
 ### [MCP Server Architecture](mcp_server.md)
-Covers server initialization, tool registration, database connection management, and connection pooling strategy.
+Covers server initialization, modular handler architecture, database connection management, and connection pooling strategy.
 
 **Topics:**
-- Server initialization sequence
-- Tool handler system (85+ tools)
+- Server initialization sequence (116-line orchestration layer)
+- **Modular handler architecture** (14 handler modules, 85 tools)
+- Dictionary-based dispatcher routing
 - Database connection pooling
-- Template/plugin/theme tool categories
+- Tool categories: templates, themes, plugins, content, users, etc.
 
 ### [Disk Sync Architecture](disk_sync.md)
 Documents the DiskSyncService orchestrator and bidirectional synchronization between database and filesystem.
@@ -195,5 +201,5 @@ Complete reference for environment variables and configuration loading.
 
 ---
 
-*Last Updated: 2026-01-18*
-*Based on: RESEARCH_MCP_SERVER_ARCHITECTURE_20250118_0811.md, RESEARCH_DISK_SYNC_SERVICE.md*
+*Last Updated: 2026-01-19*
+*Based on: MyBB Forge v2 Phase 3 Modularization, RESEARCH_MCP_SERVER_ARCHITECTURE_20250118_0811.md*

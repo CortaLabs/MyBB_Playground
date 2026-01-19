@@ -1,0 +1,27 @@
+{
+  "codename": "scaffold_test",
+  "display_name": "Scaffold Test",
+  "version": "1.0.0",
+  "author": "Developer",
+  "description": "Testing the new disk-first template scaffolding",
+  "mybb_compatibility": "18*",
+  "visibility": "public",
+  "project_type": "plugin",
+  "hooks": [
+    {
+      "name": "index_start",
+      "handler": "scaffold_test_index_start",
+      "priority": 10
+    }
+  ],
+  "settings": [],
+  "templates": [],
+  "files": {
+    "plugin": "inc/plugins/scaffold_test.php",
+    "languages": "inc/languages/",
+    "jscripts": "jscripts/",
+    "images": "images/"
+  },
+  "has_templates": true,
+  "has_database": false
+}

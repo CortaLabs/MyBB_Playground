@@ -3,12 +3,20 @@
 Handles bidirectional synchronization of MyBB templates between database and disk files.
 """
 
+import logging
+import os
+import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Dict, Optional
 
 from mybb_mcp.db.connection import MyBBDatabase
+
+# Environment variable to disable template set caching for development
+DISABLE_CACHE_ENV = "MYBB_SYNC_DISABLE_CACHE"
 from mybb_mcp.sync.router import PathRouter
 from mybb_mcp.sync.groups import TemplateGroupManager
+
+logger = logging.getLogger(__name__)
 
 
 class TemplateExporter:
@@ -150,6 +158,9 @@ class TemplateExporter:
 class TemplateImporter:
     """Imports templates from disk files to database."""
 
+    # Cache TTL in seconds (5 minutes)
+    _cache_ttl = 300
+
     def __init__(self, db: MyBBDatabase):
         """Initialize template importer.
 
@@ -157,6 +168,79 @@ class TemplateImporter:
             db: MyBBDatabase instance for template operations
         """
         self.db = db
+        # Template set cache: maps set_name -> sid
+        self._set_cache: Dict[str, int] = {}
+        # Cache timestamp tracking: maps set_name -> timestamp
+        self._cache_time: Dict[str, float] = {}
+        # Check if caching is disabled via env var
+        self._cache_disabled = os.environ.get(DISABLE_CACHE_ENV, "").lower() in ("1", "true", "yes")
+        if self._cache_disabled:
+            logger.info("Template set caching DISABLED via MYBB_SYNC_DISABLE_CACHE")
+
+    def clear_cache(self) -> None:
+        """Clear the template set cache.
+
+        Useful for development or when template sets are modified.
+        """
+        self._set_cache.clear()
+        self._cache_time.clear()
+        logger.debug("Template set cache cleared")
+
+    def _get_template_set_id(self, set_name: str) -> Optional[int]:
+        """Get template set ID with caching.
+
+        Checks cache for valid entry, otherwise queries database and caches result.
+        Cache entries expire after _cache_ttl seconds (300s = 5 minutes).
+
+        Args:
+            set_name: Template set name (e.g., "Default Templates")
+
+        Returns:
+            Template set ID (sid) if found, None otherwise
+
+        Cache Behavior:
+            - Cache hit (valid): Returns cached sid, logs cache hit
+            - Cache miss (not cached): Queries DB, caches result, logs cache miss
+            - Cache expired: Queries DB, updates cache, logs cache expiry
+        """
+        # Skip cache if disabled
+        if self._cache_disabled:
+            logger.debug(f"Template set cache DISABLED - querying database for: {set_name}")
+            template_set = self.db.get_template_set_by_name(set_name)
+            return template_set['sid'] if template_set else None
+
+        current_time = time.time()
+
+        # Check if set_name is in cache and not expired
+        if set_name in self._set_cache:
+            cache_age = current_time - self._cache_time[set_name]
+            if cache_age < self._cache_ttl:
+                # Cache hit - valid entry
+                logger.debug(
+                    f"Template set cache HIT: {set_name} (sid={self._set_cache[set_name]}, age={cache_age:.1f}s)"
+                )
+                return self._set_cache[set_name]
+            else:
+                # Cache expired
+                logger.debug(
+                    f"Template set cache EXPIRED: {set_name} (age={cache_age:.1f}s, ttl={self._cache_ttl}s)"
+                )
+
+        # Cache miss or expired - query database
+        logger.debug(f"Template set cache MISS: {set_name} - querying database")
+        template_set = self.db.get_template_set_by_name(set_name)
+
+        if template_set:
+            sid = template_set['sid']
+            # Store in cache with current timestamp
+            self._set_cache[set_name] = sid
+            self._cache_time[set_name] = current_time
+            logger.debug(f"Template set cached: {set_name} -> sid={sid}")
+            return sid
+        else:
+            # Template set not found - do not cache negative results
+            logger.warning(f"Template set not found in database: {set_name}")
+            return None
 
     async def import_template(self, set_name: str, template_name: str, content: str) -> bool:
         """Import a template from disk to database.
@@ -182,12 +266,10 @@ class TemplateImporter:
         if not content or len(content.strip()) == 0:
             raise ValueError(f"Cannot import empty template: {template_name}")
 
-        # Step 1: Get template set ID
-        template_set = self.db.get_template_set_by_name(set_name)
-        if not template_set:
+        # Step 1: Get template set ID (with caching)
+        sid = self._get_template_set_id(set_name)
+        if sid is None:
             raise ValueError(f"Template set not found: {set_name}")
-
-        sid = template_set['sid']
 
         # Step 2: Check if master template exists (sid=-2)
         master = self.db.get_template(template_name, sid=-2)

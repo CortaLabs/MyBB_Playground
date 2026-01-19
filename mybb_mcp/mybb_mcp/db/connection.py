@@ -965,6 +965,71 @@ class MyBBDatabase:
                 cur.execute(f"DELETE FROM {self.table('posts')} WHERE pid = %s", (pid,))
             return cur.rowcount > 0
 
+    def update_post_field(self, pid: int, field: str, value: Any) -> bool:
+        """Update a single field of a post with whitelisted fields.
+
+        Args:
+            pid: Post ID
+            field: Field name to update (must be in whitelist)
+            value: New value for the field
+
+        Returns:
+            True if updated, False otherwise
+
+        Raises:
+            ValueError: If field is not in whitelist
+        """
+        allowed_fields = {'tid', 'fid', 'visible', 'message', 'subject'}
+
+        if field not in allowed_fields:
+            raise ValueError(
+                f"Field '{field}' not allowed. Allowed fields: {', '.join(sorted(allowed_fields))}"
+            )
+
+        with self.cursor() as cur:
+            cur.execute(
+                f"UPDATE {self.table('posts')} SET {field} = %s WHERE pid = %s",
+                (value, pid)
+            )
+            return cur.rowcount > 0
+
+    def update_posts_by_thread(self, tid: int, **fields) -> int:
+        """Update multiple posts in a thread with whitelisted fields.
+
+        Args:
+            tid: Thread ID
+            **fields: Fields to update (must be in whitelist)
+
+        Returns:
+            Number of posts updated (rowcount)
+
+        Raises:
+            ValueError: If any field is not in whitelist
+        """
+        allowed_fields = {'fid', 'visible'}
+
+        # Validate all fields
+        invalid_fields = set(fields.keys()) - allowed_fields
+        if invalid_fields:
+            raise ValueError(
+                f"Fields not allowed: {', '.join(sorted(invalid_fields))}. "
+                f"Allowed fields: {', '.join(sorted(allowed_fields))}"
+            )
+
+        if not fields:
+            return 0
+
+        # Build SET clause dynamically
+        set_clause = ", ".join([f"{k} = %s" for k in fields.keys()])
+        values = list(fields.values()) + [tid]
+
+        with self.cursor() as cur:
+            cur.execute(
+                f"UPDATE {self.table('posts')} SET {set_clause} WHERE tid = %s",
+                values
+            )
+            return cur.rowcount
+
     # ==================== Search Operations ====================
 
     def search_posts(

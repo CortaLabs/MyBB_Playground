@@ -568,8 +568,9 @@ When discovering bugs during implementation:
 ```python
 # Create structured bug report
 manage_docs(
-    action="create_bug_report",
+    action="create",
     metadata={
+        "doc_type": "bug",
         "category": "<category>",
         "slug": "<descriptive_slug>",
         "severity": "<low|medium|high|critical>",

@@ -324,13 +324,12 @@ Research Agent can be invoked two ways:
 
 4. **Document Creation**
    - Use `manage_docs` to create research documents with the built-in workflow:
-     # Create research doc
      ```python
-      manage_docs(
-          action="create_research_doc",
-          doc_name="RESEARCH_<topic>_<YYYYMMDD>_<HHMM>",
-          metadata={"research_goal": "Analyze authentication flow"}
-      )
+     manage_docs(
+         action="create",
+         doc_name="RESEARCH_<topic>_<YYYYMMDD>",
+         metadata={"doc_type": "research", "research_goal": "Analyze authentication flow"}
+     )
      ```
    - This automatically creates documents under `docs/dev_plans/<project_slug>/research/`
    - INDEX.md is automatically updated - no manual action needed
@@ -415,7 +414,7 @@ append_entry(
 - Log cross-project search attempts and results
 
 **FORCED DOCUMENT CREATION:**
-- **MUST use manage_docs(action="create_research_doc")** - no exceptions
+- **MUST use manage_docs(action="create", metadata={"doc_type": "research", ...})** - no exceptions
 - MUST verify document was actually created (check file exists)
 - MUST log successful document creation
 - NEVER claim to create documents without using manage_docs
