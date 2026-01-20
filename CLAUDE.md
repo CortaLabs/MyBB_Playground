@@ -214,6 +214,54 @@ mybb_server_logs(offset=50, limit=50)        # Pagination (page 2)
 
 **Log file:** `logs/server.log` (gitignored, rotates on server start)
 
+### Browser Testing (Chrome DevTools MCP)
+Use Chrome DevTools MCP tools to test MyBB in a real browser:
+
+**Dev Credentials:**
+- **URL:** http://localhost:8022
+- **Admin CP:** http://localhost:8022/admin/
+- **Username:** `admin`
+- **Password:** `admin`
+
+**Common Browser Operations:**
+```python
+# List open pages
+mcp__chrome-devtools__list_pages()
+
+# Navigate to MyBB
+mcp__chrome-devtools__navigate_page(url="http://localhost:8022", type="url")
+
+# Take a snapshot (preferred over screenshot for understanding page structure)
+mcp__chrome-devtools__take_snapshot()
+
+# Click an element by uid from snapshot
+mcp__chrome-devtools__click(uid="1_27")  # e.g., Admin CP link
+
+# Fill a form field
+mcp__chrome-devtools__fill(uid="1_13", value="search term")
+
+# Take a screenshot (for visual verification)
+mcp__chrome-devtools__take_screenshot()
+
+# Check for errors in console
+mcp__chrome-devtools__list_console_messages()
+```
+
+**Testing Workflow:**
+1. Ensure server is running: `mybb_server_status()`
+2. Navigate to the page you're testing
+3. Take snapshot to understand page structure
+4. Interact with elements using uid from snapshot
+5. Check console for JavaScript errors
+6. Check server logs for PHP errors: `mybb_server_logs(errors_only=True)`
+
+**Notes:**
+- **Snapshots** give element uids for interaction (clicking, filling forms)
+- **Screenshots** are required for visual verification (CSS, layout, styling issues)
+- Use both: snapshot to understand structure, screenshot to see how it looks
+- The MCP runs with `--isolated` flag to avoid profile conflicts
+- Admin is pre-logged-in during development
+
 ## Critical Rules
 
 ### DO NOT Edit Core MyBB Files
