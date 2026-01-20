@@ -16,8 +16,12 @@ async def handle_db_query(args: dict, db: Any, config: Any, sync_service: Any) -
         Query results formatted as markdown table, or error message
     """
     query = args.get("query", "").strip()
-    if not query.upper().startswith("SELECT"):
-        return "Error: Only SELECT queries are allowed."
+    query_upper = query.upper()
+
+    # Allow read-only operations: SELECT, DESCRIBE, SHOW, EXPLAIN
+    allowed_prefixes = ("SELECT", "DESCRIBE", "DESC", "SHOW", "EXPLAIN")
+    if not any(query_upper.startswith(prefix) for prefix in allowed_prefixes):
+        return "Error: Only read-only queries allowed (SELECT, DESCRIBE, SHOW, EXPLAIN)."
 
     with db.cursor() as cur:
         cur.execute(query)
