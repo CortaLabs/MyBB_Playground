@@ -225,7 +225,7 @@ mybb_sync/template_sets/*/Invite System Templates/
 .scribe/docs/dev_plans/invite-system/
 plugin_manager/backups/*
 .plugin_manager/projects.db.backup_*
-
+test_screenshots/*
 
 # BEGIN MYBB-FORGE MANAGED - DO NOT EDIT
 # Plugin/theme workspaces (nested git repos by default)
@@ -237,3 +237,4 @@ plugin_manager/themes/*/
 !plugin_manager/plugins/public/cortex/
 !plugin_manager/plugins/public/dice_roller/
 # END MYBB-FORGE MANAGED
+
