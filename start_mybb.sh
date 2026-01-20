@@ -6,6 +6,8 @@
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MYBB_DIR="${SCRIPT_DIR}/TestForum"
 PORT="${MYBB_PORT:-8022}"
+LOG_DIR="${SCRIPT_DIR}/logs"
+LOG_FILE="${LOG_DIR}/server.log"
 
 # Colors for output
 RED='\033[0;31m'
@@ -54,6 +56,17 @@ echo ""
 echo "Press Ctrl+C to stop the server"
 echo ""
 
-# Start PHP built-in server
+# Ensure log directory exists
+mkdir -p "$LOG_DIR"
+
+# Rotate log file (keep one backup)
+if [ -f "$LOG_FILE" ]; then
+    mv "$LOG_FILE" "${LOG_FILE}.1"
+fi
+
+echo -e "${YELLOW}Logging to: ${LOG_FILE}${NC}"
+echo ""
+
+# Start PHP built-in server with logging (tee to both terminal and file)
 cd "$MYBB_DIR"
-php -S localhost:${PORT} -t .
+php -S localhost:${PORT} -t . 2>&1 | tee -a "$LOG_FILE"

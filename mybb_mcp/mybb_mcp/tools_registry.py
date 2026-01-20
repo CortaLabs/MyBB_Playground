@@ -767,6 +767,107 @@ SYNC_TOOLS = [
 ]
 
 
+# ==================== Server Orchestration Tools ====================
+
+ORCHESTRATION_TOOLS = [
+    Tool(
+        name="mybb_server_start",
+        description="Start the MyBB PHP development server. Auto-detects if already running. Requires MariaDB to be running.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "port": {
+                    "type": "integer",
+                    "description": "Port to run server on (default: MYBB_PORT env var or 8022)"
+                },
+                "force": {
+                    "type": "boolean",
+                    "description": "If true, stop existing server first",
+                    "default": False
+                }
+            }
+        }
+    ),
+    Tool(
+        name="mybb_server_stop",
+        description="Stop the MyBB PHP development server gracefully.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "force": {
+                    "type": "boolean",
+                    "description": "If true, force kill if graceful shutdown fails",
+                    "default": False
+                }
+            }
+        }
+    ),
+    Tool(
+        name="mybb_server_status",
+        description="Get the current status of the MyBB development server including port, PID, uptime, and MariaDB status.",
+        inputSchema={
+            "type": "object",
+            "properties": {}
+        }
+    ),
+    Tool(
+        name="mybb_server_logs",
+        description="Query PHP server logs with filtering. Essential for debugging - shows PHP errors, warnings, and request logs.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "errors_only": {
+                    "type": "boolean",
+                    "description": "Only show PHP errors, warnings, and 4xx/5xx responses",
+                    "default": False
+                },
+                "exclude_static": {
+                    "type": "boolean",
+                    "description": "Filter out static asset requests (.css, .js, images)",
+                    "default": False
+                },
+                "since_minutes": {
+                    "type": "integer",
+                    "description": "Only show entries from last N minutes"
+                },
+                "filter_keyword": {
+                    "type": "string",
+                    "description": "Filter logs by keyword (case-insensitive)"
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Maximum number of entries to return",
+                    "default": 50
+                },
+                "tail": {
+                    "type": "boolean",
+                    "description": "Read from end of file (most recent first)",
+                    "default": True
+                },
+                "offset": {
+                    "type": "integer",
+                    "description": "Pagination offset. Use with limit for paging through results.",
+                    "default": 0
+                }
+            }
+        }
+    ),
+    Tool(
+        name="mybb_server_restart",
+        description="Restart the MyBB PHP development server (stop then start).",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "port": {
+                    "type": "integer",
+                    "description": "Port to run server on after restart"
+                }
+            }
+        }
+    ),
+]
+
+
 # ==================== Plugin Git Tools (Nested Repo Operations) ====================
 
 PLUGIN_GIT_TOOLS = [
@@ -1223,6 +1324,7 @@ ALL_TOOLS = (
     DATABASE_TOOLS +
     CONTENT_TOOLS +
     SYNC_TOOLS +
+    ORCHESTRATION_TOOLS +
     PLUGIN_GIT_TOOLS +
     SEARCH_TOOLS +
     ADMIN_TOOLS +
@@ -1231,5 +1333,5 @@ ALL_TOOLS = (
 )
 
 # Tool count verification
-EXPECTED_TOOL_COUNT = 94  # Was 91, added 3 git tools (commit, push, pull)
+EXPECTED_TOOL_COUNT = 99  # Was 94, added 5 server orchestration tools
 assert len(ALL_TOOLS) == EXPECTED_TOOL_COUNT, f"Expected {EXPECTED_TOOL_COUNT} tools, got {len(ALL_TOOLS)}"

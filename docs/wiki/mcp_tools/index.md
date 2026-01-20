@@ -4,7 +4,7 @@ Complete reference for all MyBB MCP server tools available in the `mybb_mcp` ser
 
 ## Overview
 
-The MyBB MCP server provides **85 tools** across **13 categories** for comprehensive MyBB forum management through Claude Code.
+The MyBB MCP server provides **99 tools** across **14 categories** for comprehensive MyBB forum management through Claude Code.
 
 ### Tool Categories
 
@@ -22,9 +22,10 @@ The MyBB MCP server provides **85 tools** across **13 categories** for comprehen
 | [Admin & Settings](admin_settings.md) | 11 | Settings management, cache control, board statistics |
 | [Tasks](tasks.md) | 5 | Scheduled task management and logging |
 | [Disk Sync](disk_sync.md) | 5 | Template/stylesheet disk synchronization |
+| [Server Orchestration](orchestration.md) | 5 | Development server lifecycle and log querying |
 | [Database](database.md) | 1 | Direct database queries (read-only) |
 
-**Total:** 85 tools
+**Total:** 99 tools
 
 ## Quick Reference
 
@@ -52,6 +53,12 @@ The MyBB MCP server provides **85 tools** across **13 categories** for comprehen
 - `mybb_setting_get` / `mybb_setting_set` - Manage board settings
 - `mybb_cache_rebuild` - Rebuild caches
 - `mybb_stats_board` - Board statistics
+
+**Server Orchestration:**
+- `mybb_server_start` - Start development server
+- `mybb_server_stop` - Stop development server
+- `mybb_server_status` - Check server status
+- `mybb_server_logs` - Query server logs with filtering
 
 ## Tool Documentation Structure
 
@@ -93,6 +100,7 @@ Browse by category:
 - **[Admin & Settings](admin_settings.md)** - Configuration
 - **[Tasks](tasks.md)** - Scheduled tasks
 - **[Disk Sync](disk_sync.md)** - File synchronization
+- **[Server Orchestration](orchestration.md)** - Development server management
 - **[Database](database.md)** - Direct queries
 
 ---

@@ -146,7 +146,7 @@ mybb_mcp/mybb_mcp/
 └── tools/plugins.py    # Plugin scaffolding + hooks reference
 ```
 
-**Tool Categories (94 tools):**
+**Tool Categories (99 tools):**
 - Templates (9): list, read, write, batch operations, find/replace, outdated detection
 - Themes/Stylesheets (6): list, read, write, create themes
 - Plugins (15): CRUD, hooks discovery, lifecycle management (install/uninstall with PHP execution)
@@ -156,6 +156,7 @@ mybb_mcp/mybb_mcp/
 - Admin/Settings (11): settings, cache, statistics
 - Tasks (6): scheduled task management
 - Disk Sync (5): export, import, watcher control
+- Server Orchestration (5): start, stop, status, logs, restart PHP dev server
 
 See [MCP Tools Reference](docs/wiki/mcp_tools/index.md) for complete documentation.
 
@@ -176,6 +177,42 @@ Templates and stylesheets sync between disk and database:
 - **Workflow:** Edit files on disk, watcher auto-syncs — this is the primary development workflow
 
 See [Disk Sync Architecture](docs/wiki/architecture/disk_sync.md) for implementation details.
+
+### Server Orchestration
+MCP tools for managing the PHP development server:
+
+```python
+# Check server status
+mybb_server_status()
+
+# Start server (auto-detects if already running)
+mybb_server_start()
+mybb_server_start(port=8022, force=True)  # Force restart on specific port
+
+# Stop server
+mybb_server_stop()
+mybb_server_stop(force=True)  # Force kill if graceful shutdown fails
+
+# Restart server
+mybb_server_restart()
+
+# Query server logs (essential for debugging)
+mybb_server_logs()                           # Last 50 entries
+mybb_server_logs(errors_only=True)           # Only errors (PHP errors, 4xx/5xx)
+mybb_server_logs(errors_only=True, limit=100)  # More error entries
+mybb_server_logs(exclude_static=True)        # Filter out .css, .js, images
+mybb_server_logs(since_minutes=5)            # Last 5 minutes only
+mybb_server_logs(filter_keyword="Fatal")     # Search for keyword
+mybb_server_logs(offset=50, limit=50)        # Pagination (page 2)
+```
+
+**Log Features:**
+- Error categorization: `fatal`, `parse`, `warning`, `notice`, `http_5xx`, `http_4xx`, etc.
+- Token guards: max 8000 chars output to prevent context bloat
+- Pagination with offset/limit for large logs
+- Error breakdown summary in output
+
+**Log file:** `logs/server.log` (gitignored, rotates on server start)
 
 ## Critical Rules
 

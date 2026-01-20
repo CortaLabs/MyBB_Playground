@@ -13,7 +13,7 @@
 
 [Getting Started](#-quick-start) •
 [Documentation](docs/wiki/index.md) •
-[94 MCP Tools](docs/wiki/mcp_tools/index.md) •
+[99 MCP Tools](docs/wiki/mcp_tools/index.md) •
 [Plugin Manager](docs/wiki/plugin_manager/index.md)
 
 </div>
@@ -22,7 +22,7 @@
 
 ## What is MyBB Playground?
 
-MyBB Playground connects **Claude Code** directly to your MyBB installation through **94+ MCP tools**. Instead of manually editing PHP files, writing SQL queries, and navigating the admin panel, you can develop plugins and themes using natural language.
+MyBB Playground connects **Claude Code** directly to your MyBB installation through **99 MCP tools**. Instead of manually editing PHP files, writing SQL queries, and navigating the admin panel, you can develop plugins and themes using natural language.
 
 ```
 You: "Create a plugin that shows user badges based on post count"
@@ -39,7 +39,7 @@ Claude: Creates complete plugin with:
 
 | Feature | Description |
 |---------|-------------|
-| **94 MCP Tools** | Full MyBB API coverage — templates, themes, plugins, forums, users, moderation, settings |
+| **99 MCP Tools** | Full MyBB API coverage — templates, themes, plugins, forums, users, moderation, settings, server |
 | **Disk Sync** | Edit templates/stylesheets in your editor, auto-syncs to database |
 | **Plugin Manager** | Structured workspace for plugin development with deployment tracking |
 | **PHP Bridge** | Execute actual PHP lifecycle functions (_install, _activate, etc.) |
@@ -132,9 +132,9 @@ export MYBB_INSTALL_MODE=fresh  # fresh, update, or skip
 
 ```
 MyBB_Playground/
-├── mybb_mcp/                 # MCP Server (94 tools)
+├── mybb_mcp/                 # MCP Server (99 tools)
 │   ├── server.py             # Server orchestration (116 lines)
-│   ├── tools_registry.py     # Tool definitions (94 tools)
+│   ├── tools_registry.py     # Tool definitions (99 tools)
 │   ├── handlers/             # Modular tool handlers
 │   │   ├── dispatcher.py     # Central routing
 │   │   ├── templates.py      # 8 template handlers
@@ -171,7 +171,7 @@ MyBB_Playground/
 
 ---
 
-## MCP Tools (94)
+## MCP Tools (99)
 
 Full reference: [docs/wiki/mcp_tools/index.md](docs/wiki/mcp_tools/index.md)
 
@@ -187,6 +187,7 @@ Full reference: [docs/wiki/mcp_tools/index.md](docs/wiki/mcp_tools/index.md)
 | [**Admin/Settings**](docs/wiki/mcp_tools/admin_settings.md) | 11 | Settings, cache control, statistics |
 | [**Tasks**](docs/wiki/mcp_tools/tasks.md) | 6 | Scheduled task management |
 | [**Disk Sync**](docs/wiki/mcp_tools/disk_sync.md) | 5 | Export, import, file watcher control |
+| [**Server Orchestration**](docs/wiki/mcp_tools/orchestration.md) | 5 | Start, stop, restart, status, query logs |
 | [**Database**](docs/wiki/mcp_tools/database.md) | 1 | Read-only SQL queries |
 
 ### Tool Examples
@@ -217,6 +218,12 @@ mybb_search_advanced(
     forums=[2, 5],
     limit=25
 )
+
+# Server management
+mybb_server_status()                         # Check if server running
+mybb_server_start()                          # Start PHP dev server
+mybb_server_logs(errors_only=True)           # View PHP errors only
+mybb_server_logs(since_minutes=5, limit=100) # Last 5 minutes
 ```
 
 ---
@@ -296,7 +303,7 @@ mybb_sync_start_watcher()
 | Section | Description |
 |---------|-------------|
 | [**Getting Started**](docs/wiki/getting_started/index.md) | Installation, quickstart tutorial |
-| [**MCP Tools Reference**](docs/wiki/mcp_tools/index.md) | All 94 tools with parameters and examples |
+| [**MCP Tools Reference**](docs/wiki/mcp_tools/index.md) | All 99 tools with parameters and examples |
 | [**Plugin Manager**](docs/wiki/plugin_manager/index.md) | Workspace, deployment, PHP lifecycle |
 | [**Architecture**](docs/wiki/architecture/index.md) | MCP server, disk sync, configuration |
 | [**Best Practices**](docs/wiki/best_practices/index.md) | Plugin/theme patterns, security |

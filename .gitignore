@@ -159,6 +159,9 @@ logs/*
 debug/
 *.debug
 
+# Server orchestration state
+.mybb-server.json
+
 # ===========================================
 # MCP Server / Python Bridge
 # ===========================================
