@@ -4,7 +4,7 @@ Complete reference for all MyBB MCP server tools available in the `mybb_mcp` ser
 
 ## Overview
 
-The MyBB MCP server provides **99 tools** across **14 categories** for comprehensive MyBB forum management through Claude Code.
+The MyBB MCP server provides **102 tools** across **15 categories** for comprehensive MyBB forum management through Claude Code.
 
 ### Tool Categories
 
@@ -23,9 +23,10 @@ The MyBB MCP server provides **99 tools** across **14 categories** for comprehen
 | [Tasks](tasks.md) | 5 | Scheduled task management and logging |
 | [Disk Sync](disk_sync.md) | 5 | Template/stylesheet disk synchronization |
 | [Server Orchestration](orchestration.md) | 5 | Development server lifecycle and log querying |
+| [Language Validation](languages.md) | 3 | Plugin language file validation and stub generation |
 | [Database](database.md) | 1 | Direct database queries (read-only) |
 
-**Total:** 99 tools
+**Total:** 102 tools
 
 ## Quick Reference
 
@@ -59,6 +60,11 @@ The MyBB MCP server provides **99 tools** across **14 categories** for comprehen
 - `mybb_server_stop` - Stop development server
 - `mybb_server_status` - Check server status
 - `mybb_server_logs` - Query server logs with filtering
+
+**Language Validation:**
+- `mybb_lang_validate` - Validate plugin language files
+- `mybb_lang_generate_stub` - Generate missing definitions
+- `mybb_lang_scan_usage` - Scan files for language usage
 
 ## Tool Documentation Structure
 
@@ -101,6 +107,7 @@ Browse by category:
 - **[Tasks](tasks.md)** - Scheduled tasks
 - **[Disk Sync](disk_sync.md)** - File synchronization
 - **[Server Orchestration](orchestration.md)** - Development server management
+- **[Language Validation](languages.md)** - Plugin language validation
 - **[Database](database.md)** - Direct queries
 
 ---
