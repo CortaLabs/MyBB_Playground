@@ -4,6 +4,8 @@ from datetime import datetime
 import time
 from typing import Any
 
+from ..bridge import MyBBBridgeClient
+
 
 # ==================== Forum Handlers ====================
 
@@ -86,16 +88,30 @@ async def handle_forum_create(args: dict, db: Any, config: Any, sync_service: An
     if not name:
         return "Error: 'name' is required."
 
-    fid = db.create_forum(
+    bridge = MyBBBridgeClient(config.mybb_root)
+    info = await bridge.call_async("info")
+    if not info.success:
+        return f"Error: Bridge info failed: {info.error or 'unknown error'}"
+    supported = info.data.get("supported_actions", [])
+    if "forum:create" not in supported:
+        return "Error: Bridge does not support 'forum:create' yet."
+
+    result = await bridge.call_async(
+        "forum:create",
         name=name,
         description=args.get("description", ""),
-        forum_type=args.get("type", "f"),
+        type=args.get("type", "f"),
         pid=args.get("pid", 0),
-        parentlist=args.get("parentlist", ""),
-        disporder=args.get("disporder", 1)
+        disporder=args.get("disporder", 1),
+        active=args.get("active"),
+        open=args.get("open"),
     )
 
-    return f"# Forum Created\n\nForum '{name}' created with FID: {fid}"
+    if not result.success:
+        return f"Error: Bridge forum:create failed: {result.error or 'unknown error'}"
+
+    fid = result.data.get("fid")
+    return f"# Forum Created (Bridge)\n\nForum '{name}' created with FID: {fid}"
 
 
 async def handle_forum_update(args: dict, db: Any, config: Any, sync_service: Any) -> str:
@@ -114,20 +130,27 @@ async def handle_forum_update(args: dict, db: Any, config: Any, sync_service: An
     if not fid:
         return "Error: 'fid' is required."
 
-    # Build kwargs from args
     updates = {}
-    for key in ['name', 'description', 'type', 'disporder', 'active', 'open']:
+    for key in ['name', 'description', 'type', 'pid', 'disporder', 'active', 'open']:
         if key in args and args[key] is not None:
             updates[key] = args[key]
 
     if not updates:
         return "Error: No update fields provided."
 
-    success = db.update_forum(fid, **updates)
-    if success:
-        return f"# Forum Updated\n\nForum {fid} updated successfully."
-    else:
-        return f"Error: Failed to update forum {fid}."
+    bridge = MyBBBridgeClient(config.mybb_root)
+    info = await bridge.call_async("info")
+    if not info.success:
+        return f"Error: Bridge info failed: {info.error or 'unknown error'}"
+    supported = info.data.get("supported_actions", [])
+    if "forum:update" not in supported:
+        return "Error: Bridge does not support 'forum:update' yet."
+
+    result = await bridge.call_async("forum:update", fid=fid, **updates)
+    if not result.success:
+        return f"Error: Bridge forum:update failed: {result.error or 'unknown error'}"
+
+    return f"# Forum Updated (Bridge)\n\nForum {fid} updated successfully."
 
 
 async def handle_forum_delete(args: dict, db: Any, config: Any, sync_service: Any) -> str:
@@ -136,7 +159,7 @@ async def handle_forum_delete(args: dict, db: Any, config: Any, sync_service: An
     Args:
         args: Tool arguments containing 'fid' parameter
         db: MyBBDatabase instance
-        config: Server configuration (unused)
+        config: Server configuration
         sync_service: Disk sync service (unused)
 
     Returns:
@@ -144,28 +167,27 @@ async def handle_forum_delete(args: dict, db: Any, config: Any, sync_service: An
 
     Note:
         Does not handle content migration. Ensure forum is empty first.
+        Uses bridge for proper cache invalidation.
     """
     fid = args.get("fid")
     if not fid:
         return "Error: 'fid' is required."
 
-    # Check if forum has content
-    forum = db.get_forum(fid)
-    if not forum:
-        return f"Error: Forum {fid} not found."
+    bridge = MyBBBridgeClient(config.mybb_root)
+    info = await bridge.call_async("info")
+    if not info.success:
+        return f"Error: Bridge info failed: {info.error or 'unknown error'}"
+    supported = info.data.get("supported_actions", [])
+    if "forum:delete" not in supported:
+        return "Error: Bridge does not support 'forum:delete' yet."
 
-    if forum['threads'] > 0 or forum['posts'] > 0:
-        return (
-            f"# Cannot Delete Forum\n\n"
-            f"Forum {fid} has {forum['threads']} threads and {forum['posts']} posts.\n"
-            f"Please move or delete all content first."
-        )
+    result = await bridge.call_async("forum:delete", fid=fid)
 
-    success = db.delete_forum(fid)
-    if success:
-        return f"# Forum Deleted\n\nForum {fid} deleted successfully."
-    else:
-        return f"Error: Failed to delete forum {fid}."
+    if not result.success:
+        # Bridge returns detailed error for content check
+        return f"Error: Bridge forum:delete failed: {result.error or 'unknown error'}"
+
+    return f"# Forum Deleted (Bridge)\n\nForum {fid} deleted successfully."
 
 
 # ==================== Thread Handlers ====================
@@ -259,39 +281,41 @@ async def handle_thread_create(args: dict, db: Any, config: Any, sync_service: A
     if not all([fid, subject, message]):
         return "Error: 'fid', 'subject', and 'message' are required."
 
+    if args.get("prefix", 0):
+        return "Error: 'prefix' is not supported by the bridge yet. Use 0 or omit."
+
     uid = args.get("uid", 1)
     username = args.get("username", "Admin")
-    prefix = args.get("prefix", 0)
 
-    # Atomic creation: first post, then thread
-    # Create the post first (we need its pid for thread.firstpost)
-    pid = db.create_post(
-        tid=0,  # Temporary, will update after thread creation
+    bridge = MyBBBridgeClient(config.mybb_root)
+    info = await bridge.call_async("info")
+    if not info.success:
+        return f"Error: Bridge info failed: {info.error or 'unknown error'}"
+    supported = info.data.get("supported_actions", [])
+    if "thread:create" not in supported:
+        return "Error: Bridge does not support 'thread:create' yet."
+
+    result = await bridge.call_async(
+        "thread:create",
         fid=fid,
         subject=subject,
         message=message,
-        uid=uid,
-        username=username
-    )
-
-    # Create the thread with the first post pid
-    tid = db.create_thread(
-        fid=fid,
-        subject=subject,
         uid=uid,
         username=username,
-        firstpost_pid=pid,
-        message=message,
-        prefix=prefix
     )
 
-    # Update the post's tid
-    db.update_post_field(pid, "tid", tid)
+    if not result.success:
+        details = result.data.get("errors") if isinstance(result.data, dict) else None
+        return f"Error: Bridge thread:create failed: {result.error or 'unknown error'}{f' | {details}' if details else ''}"
 
-    # Update forum counters
-    db.update_forum_counters(fid, threads_delta=1, posts_delta=1)
-
-    return f"# Thread Created\n\nThread '{subject}' created with TID: {tid} (First post PID: {pid})"
+    tid = result.data.get("tid")
+    pid = result.data.get("pid")
+    visibility = result.data.get("visibility")
+    return (
+        f"# Thread Created (Bridge)\n\n"
+        f"Thread '{subject}' created with TID: {tid} (First post PID: {pid})\n"
+        f"Visibility: {visibility}"
+    )
 
 
 async def handle_thread_update(args: dict, db: Any, config: Any, sync_service: Any) -> str:
@@ -310,20 +334,41 @@ async def handle_thread_update(args: dict, db: Any, config: Any, sync_service: A
     if not tid:
         return "Error: 'tid' is required."
 
-    # Build kwargs from args
-    updates = {}
-    for key in ['subject', 'prefix', 'fid', 'closed', 'sticky', 'visible']:
-        if key in args and args[key] is not None:
-            updates[key] = args[key]
+    if args.get("prefix") not in (None, 0):
+        return "Error: 'prefix' updates are not supported by the bridge yet."
+    if args.get("fid") is not None:
+        return "Error: 'fid' updates are not supported by the bridge yet."
 
-    if not updates:
+    subject = args.get("subject")
+    closed = args.get("closed")
+    sticky = args.get("sticky")
+    visible = args.get("visible")
+
+    if subject is None and closed is None and sticky is None and visible is None:
         return "Error: No update fields provided."
 
-    success = db.update_thread(tid, **updates)
-    if success:
-        return f"# Thread Updated\n\nThread {tid} updated successfully."
-    else:
-        return f"Error: Failed to update thread {tid}."
+    bridge = MyBBBridgeClient(config.mybb_root)
+    info = await bridge.call_async("info")
+    if not info.success:
+        return f"Error: Bridge info failed: {info.error or 'unknown error'}"
+    supported = info.data.get("supported_actions", [])
+    if "thread:edit" not in supported:
+        return "Error: Bridge does not support 'thread:edit' yet."
+
+    result = await bridge.call_async(
+        "thread:edit",
+        tid=tid,
+        subject=subject,
+        closed=closed,
+        sticky=sticky,
+        visible=visible,
+    )
+
+    if not result.success:
+        details = result.data.get("errors") if isinstance(result.data, dict) else None
+        return f"Error: Bridge thread:edit failed: {result.error or 'unknown error'}{f' | {details}' if details else ''}"
+
+    return f"# Thread Updated (Bridge)\n\nThread {tid} updated successfully."
 
 
 async def handle_thread_delete(args: dict, db: Any, config: Any, sync_service: Any) -> str:
@@ -344,28 +389,26 @@ async def handle_thread_delete(args: dict, db: Any, config: Any, sync_service: A
     if not tid:
         return "Error: 'tid' is required."
 
-    # Get thread info for counter updates
-    thread = db.get_thread(tid)
-    if not thread:
-        return f"Error: Thread {tid} not found."
+    bridge = MyBBBridgeClient(config.mybb_root)
+    info = await bridge.call_async("info")
+    if not info.success:
+        return f"Error: Bridge info failed: {info.error or 'unknown error'}"
+    supported = info.data.get("supported_actions", [])
+    if "thread:delete" not in supported:
+        return "Error: Bridge does not support 'thread:delete' yet."
 
-    # Delete thread
-    success = db.delete_thread(tid, soft=soft)
-    if success:
-        # Update forum counters (only for soft delete, hard delete should handle separately)
-        if soft:
-            # Soft delete: decrement by making negative (threads counter stays same in MyBB)
-            # Actually, MyBB keeps soft-deleted in counters until permanent delete
-            pass
-        else:
-            # Hard delete: update counters
-            post_count = thread['replies'] + 1  # replies + first post
-            db.update_forum_counters(thread['fid'], threads_delta=-1, posts_delta=-post_count)
+    result = await bridge.call_async(
+        "thread:delete",
+        tid=tid,
+        soft=True if soft else None,
+    )
 
-        delete_type = "soft deleted" if soft else "permanently deleted"
-        return f"# Thread Deleted\n\nThread {tid} {delete_type} successfully."
-    else:
-        return f"Error: Failed to delete thread {tid}."
+    if not result.success:
+        details = result.data.get("errors") if isinstance(result.data, dict) else None
+        return f"Error: Bridge thread:delete failed: {result.error or 'unknown error'}{f' | {details}' if details else ''}"
+
+    delete_type = "soft deleted" if soft else "permanently deleted"
+    return f"# Thread Deleted (Bridge)\n\nThread {tid} {delete_type} successfully."
 
 
 async def handle_thread_move(args: dict, db: Any, config: Any, sync_service: Any) -> str:
@@ -386,29 +429,25 @@ async def handle_thread_move(args: dict, db: Any, config: Any, sync_service: Any
     if not tid or not new_fid:
         return "Error: 'tid' and 'new_fid' are required."
 
-    # Get thread info
-    thread = db.get_thread(tid)
-    if not thread:
-        return f"Error: Thread {tid} not found."
+    bridge = MyBBBridgeClient(config.mybb_root)
+    info = await bridge.call_async("info")
+    if not info.success:
+        return f"Error: Bridge info failed: {info.error or 'unknown error'}"
+    supported = info.data.get("supported_actions", [])
+    if "thread:move" not in supported:
+        return "Error: Bridge does not support 'thread:move' yet."
 
-    old_fid = thread['fid']
-    if old_fid == new_fid:
-        return "Error: Thread is already in that forum."
+    result = await bridge.call_async(
+        "thread:move",
+        tid=tid,
+        new_fid=new_fid,
+    )
 
-    # Move thread
-    success = db.move_thread(tid, new_fid)
-    if success:
-        # Update counters for both forums
-        post_count = thread['replies'] + 1
-        db.update_forum_counters(old_fid, threads_delta=-1, posts_delta=-post_count)
-        db.update_forum_counters(new_fid, threads_delta=1, posts_delta=post_count)
+    if not result.success:
+        details = result.data.get("errors") if isinstance(result.data, dict) else None
+        return f"Error: Bridge thread:move failed: {result.error or 'unknown error'}{f' | {details}' if details else ''}"
 
-        # Update all posts in thread to new forum
-        db.update_posts_by_thread(tid, fid=new_fid)
-
-        return f"# Thread Moved\n\nThread {tid} moved from forum {old_fid} to {new_fid}."
-    else:
-        return f"Error: Failed to move thread {tid}."
+    return f"# Thread Moved (Bridge)\n\nThread {tid} moved to forum {new_fid}."
 
 
 # ==================== Post Handlers ====================
@@ -505,36 +544,40 @@ async def handle_post_create(args: dict, db: Any, config: Any, sync_service: Any
     if not tid or not message:
         return "Error: 'tid' and 'message' are required."
 
-    # Get thread info
-    thread = db.get_thread(tid)
-    if not thread:
-        return f"Error: Thread {tid} not found."
-
-    subject = args.get("subject", f"RE: {thread['subject']}")
+    subject = args.get("subject")
     uid = args.get("uid", 1)
     username = args.get("username", "Admin")
     replyto = args.get("replyto", 0)
 
-    # Create post
-    pid = db.create_post(
+    bridge = MyBBBridgeClient(config.mybb_root)
+    info = await bridge.call_async("info")
+    if not info.success:
+        return f"Error: Bridge info failed: {info.error or 'unknown error'}"
+    supported = info.data.get("supported_actions", [])
+    if "post:create" not in supported:
+        return "Error: Bridge does not support 'post:create' yet."
+
+    result = await bridge.call_async(
+        "post:create",
         tid=tid,
-        fid=thread['fid'],
-        subject=subject,
         message=message,
+        subject=subject,
         uid=uid,
         username=username,
-        replyto=replyto
+        replyto=replyto,
     )
 
-    # Update counters
-    db.update_thread_counters(tid, replies_delta=1)
-    db.update_forum_counters(thread['fid'], posts_delta=1)
+    if not result.success:
+        details = result.data.get("errors") if isinstance(result.data, dict) else None
+        return f"Error: Bridge post:create failed: {result.error or 'unknown error'}{f' | {details}' if details else ''}"
 
-    # Update thread lastpost
-    dateline = int(time.time())
-    db.update_thread_lastpost(tid, dateline, username, uid)
-
-    return f"# Post Created\n\nPost created with PID: {pid} in thread {tid}"
+    pid = result.data.get("pid")
+    visibility = result.data.get("visibility")
+    return (
+        f"# Post Created (Bridge)\n\n"
+        f"Post created with PID: {pid} in thread {tid}\n"
+        f"Visibility: {visibility}"
+    )
 
 
 async def handle_post_update(args: dict, db: Any, config: Any, sync_service: Any) -> str:
@@ -555,31 +598,51 @@ async def handle_post_update(args: dict, db: Any, config: Any, sync_service: Any
 
     message = args.get("message")
     subject = args.get("subject")
-    edituid = args.get("edituid")
+    edit_uid = args.get("edit_uid")
+    edituid = edit_uid if edit_uid is not None else args.get("edituid")
     editreason = args.get("editreason", "")
+    signature = args.get("signature")
+    disablesmilies = args.get("disablesmilies")
 
     if not any([message, subject]):
         return "Error: Provide at least 'message' or 'subject' to update."
 
-    success = db.update_post(
+    bridge = MyBBBridgeClient(config.mybb_root)
+    info = await bridge.call_async("info")
+    if not info.success:
+        return f"Error: Bridge info failed: {info.error or 'unknown error'}"
+    supported = info.data.get("supported_actions", [])
+    if "post:edit" not in supported:
+        return "Error: Bridge does not support 'post:edit' yet."
+
+    result = await bridge.call_async(
+        "post:edit",
         pid=pid,
         message=message,
         subject=subject,
         edituid=edituid,
-        editreason=editreason
+        editreason=editreason,
+        signature=signature,
+        disablesmilies=disablesmilies,
     )
 
-    if success:
-        return f"# Post Updated\n\nPost {pid} updated successfully."
-    else:
-        return f"Error: Failed to update post {pid}."
+    if not result.success:
+        details = result.data.get("errors") if isinstance(result.data, dict) else None
+        return f"Error: Bridge post:edit failed: {result.error or 'unknown error'}{f' | {details}' if details else ''}"
+
+    visibility = result.data.get("visibility")
+    return (
+        f"# Post Updated (Bridge)\n\n"
+        f"Post {pid} updated successfully.\n"
+        f"Visibility: {visibility}"
+    )
 
 
 async def handle_post_delete(args: dict, db: Any, config: Any, sync_service: Any) -> str:
-    """Delete a post (soft delete by default, updates counters).
+    """Delete or restore a post (soft delete by default, updates counters).
 
     Args:
-        args: Tool arguments containing 'pid' and optional 'soft' parameter
+        args: Tool arguments containing 'pid' and optional 'soft'/'restore' parameters
         db: MyBBDatabase instance
         config: Server configuration (unused)
         sync_service: Disk sync service (unused)
@@ -592,32 +655,42 @@ async def handle_post_delete(args: dict, db: Any, config: Any, sync_service: Any
     """
     pid = args.get("pid")
     soft = args.get("soft", True)
+    restore = args.get("restore", False)
 
     if not pid:
         return "Error: 'pid' is required."
 
-    # Get post info for counter updates
+    # Read-only check for first post (delete thread instead)
     post = db.get_post(pid)
     if not post:
         return f"Error: Post {pid} not found."
-
-    # Don't allow deleting first post (should delete thread instead)
     thread = db.get_thread(post['tid'])
-    if thread and thread['firstpost'] == pid:
+    if not restore and thread and thread['firstpost'] == pid:
         return "Error: Cannot delete first post. Delete the thread instead."
 
-    # Delete post
-    success = db.delete_post(pid, soft=soft)
-    if success:
-        # Update counters (only for hard delete)
-        if not soft:
-            db.update_thread_counters(post['tid'], replies_delta=-1)
-            db.update_forum_counters(post['fid'], posts_delta=-1)
+    bridge = MyBBBridgeClient(config.mybb_root)
+    info = await bridge.call_async("info")
+    if not info.success:
+        return f"Error: Bridge info failed: {info.error or 'unknown error'}"
+    supported = info.data.get("supported_actions", [])
+    if "post:delete" not in supported:
+        return "Error: Bridge does not support 'post:delete' yet."
 
-        delete_type = "soft deleted" if soft else "permanently deleted"
-        return f"# Post Deleted\n\nPost {pid} {delete_type} successfully."
-    else:
-        return f"Error: Failed to delete post {pid}."
+    result = await bridge.call_async(
+        "post:delete",
+        pid=pid,
+        restore=True if restore else None,
+        soft=True if (soft and not restore) else None,
+    )
+
+    if not result.success:
+        details = result.data.get("errors") if isinstance(result.data, dict) else None
+        return f"Error: Bridge post:delete failed: {result.error or 'unknown error'}{f' | {details}' if details else ''}"
+
+    if restore:
+        return f"# Post Restored (Bridge)\n\nPost {pid} restored successfully."
+    delete_type = "soft deleted" if soft else "permanently deleted"
+    return f"# Post Deleted (Bridge)\n\nPost {pid} {delete_type} successfully."
 
 
 # Handler registry for content tools

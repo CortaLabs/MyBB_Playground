@@ -105,7 +105,7 @@ mybb_forum_read(fid=2)
 
 ### mybb_forum_create
 **Purpose:** Create new forum or category
-**Status:** ⚠️ **BROKEN** - See Bug 1
+**Status:** ✅ **WORKING** (bridge-backed)
 **Parameters:**
 - `name` (string, required): Forum name
 - `description` (string, optional): Forum description
@@ -124,18 +124,9 @@ mybb_forum_create(
 )
 ```
 
-**Error:**
-```
-Error: 1364 (HY000): Field 'rules' doesn't have a default value
-```
-
-**Fix Required:** Tool must set 'rules' field (default to empty string '')
-
----
-
 ### mybb_forum_update
 **Purpose:** Update forum properties
-**Status:** ✅ **WORKING**
+**Status:** ✅ **WORKING** (bridge-backed)
 **Parameters:**
 - `fid` (integer, required): Forum ID to update
 - `name` (string, optional): New forum name
@@ -161,8 +152,8 @@ Forum 2 updated successfully.
 ```
 
 **Notes:**
+- Uses the PHP bridge and updates forum caches
 - Only provide parameters you want to change
-- Changes take effect immediately
 - Use forum_read to verify updates
 
 ---
@@ -484,15 +475,18 @@ Post created with PID: 3 in thread 1
 - `pid` (integer, required): Post ID
 - `message` (string, optional): New post content
 - `subject` (string, optional): New post subject
-- `edituid` (integer, optional): Editor user ID
+- `edituid` (integer, optional): Editor user ID (legacy name)
+- `edit_uid` (integer, optional): Editor user ID
 - `editreason` (string, optional): Reason for edit (default: "")
+- `signature` (integer, optional): Include signature (1=yes, 0=no)
+- `disablesmilies` (integer, optional): Disable smilies (1=yes, 0=no)
 
 **Example:**
 ```
 mybb_post_update(
     pid=3,
     message="UPDATED content with [u]underline[/u].",
-    edituid=1,
+    edit_uid=1,
     editreason="Testing post_update tool"
 )
 ```
@@ -519,6 +513,7 @@ Post 3 updated successfully.
 **Parameters:**
 - `pid` (integer, required): Post ID
 - `soft` (boolean, optional): True for soft delete (visible=-1), False for permanent (default: True)
+- `restore` (boolean, optional): Restore a soft-deleted post (default: False)
 
 **Example (soft delete):**
 ```
@@ -542,6 +537,18 @@ mybb_post_delete(pid=2, soft=False)
 # Post Deleted
 
 Post 2 permanently deleted successfully.
+```
+
+**Example (restore):**
+```
+mybb_post_delete(pid=3, restore=True)
+```
+
+**Response:**
+```
+# Post Restored
+
+Post 3 restored successfully.
 ```
 
 **Notes:**

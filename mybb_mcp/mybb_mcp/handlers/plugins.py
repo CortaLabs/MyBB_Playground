@@ -599,7 +599,7 @@ async def handle_plugin_info(
 async def handle_plugin_activate(
     args: dict, db: Any, config: Any, sync_service: Any
 ) -> str:
-    """Activate a plugin by deploying to TestForum and updating cache.
+    """Activate a plugin using the PHP lifecycle (bridge) after deploying files.
 
     Args:
         args: Must contain 'name' (plugin codename)
@@ -610,74 +610,86 @@ async def handle_plugin_activate(
     Returns:
         Markdown formatted activation result
     """
-    plugins_dir = Path(config.mybb_root) / "inc" / "plugins"
     pname = args.get("name", "").replace(".php", "")
+    force = args.get("force", False)
+    if not pname:
+        return "Error: Plugin codename is required."
 
-    # Try to use PluginManager for managed plugins
     repo_root = Path(__file__).resolve().parent.parent.parent.parent
     if str(repo_root) not in sys.path:
         sys.path.insert(0, str(repo_root))
+
+    manager = None
+    project = None
+    install_result = None
 
     try:
         from plugin_manager.manager import PluginManager
 
         manager = PluginManager()
-
-        # Check if this is a managed plugin in the workspace
         project = manager.db.get_project(pname)
 
-        if project and project.get('type') == 'plugin':
-            # Use plugin_manager install workflow (copies files to TestForum)
-            visibility = project.get('visibility', 'public')
-            result = manager.install_plugin(pname, visibility)
-
-            if result.get("success"):
-                return (
-                    f"# Plugin Installed: {pname}\n\n"
-                    f"**Status:** Deployed to TestForum\n"
-                    f"**Files Copied:** {result.get('files_copied', 0)}\n"
-                    f"**Templates Installed:** {result.get('templates_installed', 0)}\n"
-                    f"**Workspace:** `{result.get('workspace_path', 'N/A')}`\n\n"
-                    f"**Note:** Plugin files deployed to TestForum. To fully activate (run `{pname}_activate()`), "
-                    f"use MyBB Admin CP: {config.mybb_url}/admin/index.php?module=config-plugins"
-                )
-            else:
-                return f"# Install Failed: {pname}\n\n**Error:** {result.get('error', 'Unknown error')}"
-
+        if project and project.get("type") == "plugin":
+            visibility = project.get("visibility", "public")
+            install_result = manager.install_plugin(pname, visibility)
+            if not install_result.get("success"):
+                return f"# Deploy Failed: {pname}\n\n**Error:** {install_result.get('error', 'Unknown error')}"
     except ImportError:
-        pass  # Fall through to legacy behavior
+        manager = None
     except Exception as e:
-        # Log but continue to legacy if install fails
         logger.warning(f"PluginManager install failed for {pname}: {e}")
 
-    # Legacy behavior: Check if plugin exists in TestForum and update cache
-    ppath = plugins_dir / f"{pname}.php"
-    if not ppath.exists():
-        return f"Error: Plugin '{pname}' not found in TestForum or workspace."
+    try:
+        if manager:
+            lifecycle = manager._get_lifecycle()
+        else:
+            from plugin_manager.lifecycle import PluginLifecycle
+            lifecycle = PluginLifecycle(Path(config.mybb_root))
 
-    cache = db.get_plugins_cache()
-    if pname in cache["plugins"]:
-        return f"Plugin '{pname}' is already active."
+        status = lifecycle.get_status(pname)
+        if not status.success:
+            return f"Error: Bridge status failed: {status.error or 'unknown error'}"
+        if not status.data.get("is_installed"):
+            return (
+                f"Error: Plugin '{pname}' is not installed. "
+                "Use `mybb_plugin_install` or `mybb_plugin_deploy(action='reinstall')` first."
+            )
 
-    # Add to active plugins (legacy cache-only activation)
-    updated_plugins = cache["plugins"] + [pname]
-    db.update_plugins_cache(updated_plugins)
+        result = lifecycle.activate(pname, force=force)
+        if not result.success:
+            return f"Error: Bridge activate failed: {result.error or 'unknown error'}"
+    except FileNotFoundError as e:
+        return f"Error: {e}"
+    except Exception as e:
+        logger.exception(f"Error activating plugin {pname}")
+        return f"Error activating plugin {pname}: {e}"
 
-    return (
-        f"# Plugin Activated: {pname} (Legacy)\n\n"
-        f"Added to active plugins cache.\n\n"
-        f"**Warning:** This plugin is not managed by plugin_manager. "
-        f"Consider recreating it via `mybb_create_plugin` for full workspace features.\n\n"
-        f"**Warning:** This does NOT execute the PHP `{pname}_activate()` function. "
-        f"For full activation including database setup, templates, and settings, "
-        f"use MyBB's Admin CP at {config.mybb_url}/admin/index.php?module=config-plugins"
-    )
+    actions = result.data.get("actions_taken", [])
+    lines = [f"# Plugin Activated: {pname}\n"]
+    lines.append(f"**PHP Lifecycle Actions:** {', '.join(actions) if actions else 'none'}")
+    if install_result:
+        lines.append(f"**Files Deployed:** {install_result.get('file_count', 0)}")
+        if install_result.get("workspace_path"):
+            lines.append(f"**Workspace:** `{install_result.get('workspace_path')}`")
+    if install_result and install_result.get("warnings"):
+        lines.append("")
+        lines.append("**Warnings:**")
+        for w in install_result["warnings"]:
+            lines.append(f"- {w}")
+
+    if manager and project:
+        try:
+            manager.db.update_project(codename=pname, status="active")
+        except Exception:
+            pass
+
+    return "\n".join(lines)
 
 
 async def handle_plugin_deactivate(
     args: dict, db: Any, config: Any, sync_service: Any
 ) -> str:
-    """Deactivate a plugin by removing from TestForum and updating cache.
+    """Deactivate a plugin using the PHP lifecycle (bridge).
 
     Args:
         args: Must contain 'name' (plugin codename)
@@ -689,62 +701,53 @@ async def handle_plugin_deactivate(
         Markdown formatted deactivation result
     """
     pname = args.get("name", "").replace(".php", "")
+    if not pname:
+        return "Error: Plugin codename is required."
 
-    # Try to use PluginManager for managed plugins
     repo_root = Path(__file__).resolve().parent.parent.parent.parent
     if str(repo_root) not in sys.path:
         sys.path.insert(0, str(repo_root))
+
+    manager = None
+    project = None
 
     try:
         from plugin_manager.manager import PluginManager
 
         manager = PluginManager()
-
-        # Check if this is a managed plugin in the workspace
         project = manager.db.get_project(pname)
-
-        if project and project.get('type') == 'plugin':
-            # Use plugin_manager uninstall workflow (removes files from TestForum)
-            visibility = project.get('visibility', 'public')
-            result = manager.uninstall_plugin(pname, visibility)
-
-            if result.get("success"):
-                return (
-                    f"# Plugin Uninstalled: {pname}\n\n"
-                    f"**Status:** Removed from TestForum\n"
-                    f"**Files Removed:** {result.get('files_removed', 0)}\n"
-                    f"**Templates Removed:** {result.get('templates_removed', 0)}\n\n"
-                    f"**Note:** Plugin files removed from TestForum. "
-                    f"Workspace copy preserved at `{result.get('workspace_path', 'N/A')}`\n\n"
-                    f"**Reminder:** This does NOT execute the PHP `{pname}_deactivate()` function. "
-                    f"For full deactivation including cleanup, use MyBB's Admin CP first."
-                )
-            else:
-                return f"# Uninstall Failed: {pname}\n\n**Error:** {result.get('error', 'Unknown error')}"
-
     except ImportError:
-        pass  # Fall through to legacy behavior
+        manager = None
     except Exception as e:
-        # Log but continue to legacy if uninstall fails
-        logger.warning(f"PluginManager uninstall failed for {pname}: {e}")
+        logger.warning(f"PluginManager init failed for {pname}: {e}")
 
-    # Legacy behavior: Just update cache
-    cache = db.get_plugins_cache()
-    if pname not in cache["plugins"]:
-        return f"Plugin '{pname}' is not currently active."
+    try:
+        if manager:
+            lifecycle = manager._get_lifecycle()
+        else:
+            from plugin_manager.lifecycle import PluginLifecycle
+            lifecycle = PluginLifecycle(Path(config.mybb_root))
 
-    # Remove from active plugins (legacy cache-only deactivation)
-    updated_plugins = [p for p in cache["plugins"] if p != pname]
-    db.update_plugins_cache(updated_plugins)
+        result = lifecycle.deactivate(pname, uninstall=False)
+        if not result.success:
+            return f"Error: Bridge deactivate failed: {result.error or 'unknown error'}"
+    except FileNotFoundError as e:
+        return f"Error: {e}"
+    except Exception as e:
+        logger.exception(f"Error deactivating plugin {pname}")
+        return f"Error deactivating plugin {pname}: {e}"
 
-    return (
-        f"# Plugin Deactivated: {pname} (Legacy)\n\n"
-        f"Removed from active plugins cache.\n\n"
-        f"**Warning:** This plugin is not managed by plugin_manager.\n\n"
-        f"**Warning:** This does NOT execute the PHP `{pname}_deactivate()` function. "
-        f"For full deactivation including cleanup, use MyBB's Admin CP at "
-        f"{config.mybb_url}/admin/index.php?module=config-plugins"
-    )
+    actions = result.data.get("actions_taken", [])
+    lines = [f"# Plugin Deactivated: {pname}\n"]
+    lines.append(f"**PHP Lifecycle Actions:** {', '.join(actions) if actions else 'none'}")
+
+    if manager and project:
+        try:
+            manager.db.update_project(codename=pname, status="installed")
+        except Exception:
+            pass
+
+    return "\n".join(lines)
 
 
 async def handle_plugin_is_installed(
@@ -969,6 +972,67 @@ async def handle_plugin_uninstall(
     except Exception as e:
         logger.exception(f"Error in mybb_plugin_uninstall for {codename}")
         return f"Error uninstalling plugin {codename}: {e}"
+
+
+async def handle_plugin_deploy(
+    args: dict, db: Any, config: Any, sync_service: Any
+) -> str:
+    """Deploy plugin lifecycle wrapper for activate/deactivate or full reinstall."""
+    codename = (args.get("codename") or args.get("name") or "").replace(".php", "")
+    action = args.get("action", "")
+    force = args.get("force", False)
+
+    if not codename:
+        return "Error: Plugin codename is required."
+    if action not in {"activate", "deactivate", "reinstall"}:
+        return "Error: action must be one of: activate, deactivate, reinstall."
+
+    repo_root = Path(__file__).resolve().parent.parent.parent.parent
+    if str(repo_root) not in sys.path:
+        sys.path.insert(0, str(repo_root))
+
+    try:
+        from plugin_manager.manager import PluginManager
+
+        manager = PluginManager()
+    except ImportError as e:
+        return f"Error: plugin_manager not available: {e}"
+    except Exception as e:
+        return f"Error: failed to initialize plugin_manager: {e}"
+
+    if action == "activate":
+        return await handle_plugin_activate({"name": codename, "force": force}, db, config, sync_service)
+    if action == "deactivate":
+        return await handle_plugin_deactivate({"name": codename}, db, config, sync_service)
+
+    uninstall_result = manager.deactivate_full(codename, uninstall=True, remove_files=True)
+    if not uninstall_result.get("success"):
+        return f"# Plugin Reinstall Failed: {codename}\n\n**Error:** {uninstall_result.get('error', 'Uninstall failed')}"
+
+    install_result = manager.activate_full(codename, force=force)
+    if not install_result.get("success"):
+        return f"# Plugin Reinstall Failed: {codename}\n\n**Error:** {install_result.get('error', 'Install failed')}"
+
+    lines = [f"# Plugin Reinstalled: {codename}\n"]
+    uninstall_actions = uninstall_result.get("php_lifecycle", {}).get("actions_taken", [])
+    install_actions = install_result.get("php_lifecycle", {}).get("actions_taken", [])
+    lines.append(f"**Uninstall Actions:** {', '.join(uninstall_actions) if uninstall_actions else 'none'}")
+    lines.append(f"**Install Actions:** {', '.join(install_actions) if install_actions else 'none'}")
+    if install_result.get("file_count") is not None:
+        lines.append(f"**Files Deployed:** {install_result.get('file_count', 0)}")
+    if install_result.get("workspace_path"):
+        lines.append(f"**Workspace:** `{install_result.get('workspace_path')}`")
+
+    warnings = []
+    warnings.extend(uninstall_result.get("warnings", []))
+    warnings.extend(install_result.get("warnings", []))
+    if warnings:
+        lines.append("")
+        lines.append("**Warnings:**")
+        for w in warnings:
+            lines.append(f"- {w}")
+
+    return "\n".join(lines)
 
 
 async def handle_plugin_status(
@@ -1203,5 +1267,6 @@ PLUGIN_HANDLERS = {
     "mybb_plugin_is_installed": handle_plugin_is_installed,
     "mybb_plugin_install": handle_plugin_install,
     "mybb_plugin_uninstall": handle_plugin_uninstall,
+    "mybb_plugin_deploy": handle_plugin_deploy,
     "mybb_plugin_status": handle_plugin_status,
 }

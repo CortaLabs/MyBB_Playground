@@ -2,6 +2,8 @@
 
 from typing import Any
 
+from ..bridge import MyBBBridgeClient
+
 
 # ==================== User Handlers ====================
 
@@ -110,12 +112,25 @@ async def handle_user_update_group(args: dict, db: Any, config: Any, sync_servic
     if not uid or not usergroup:
         return "Error: 'uid' and 'usergroup' are required."
 
-    success = db.update_user_group(uid, usergroup, additionalgroups)
+    bridge = MyBBBridgeClient(config.mybb_root)
+    info = await bridge.call_async("info")
+    if not info.success:
+        return f"Error: Bridge info failed: {info.error or 'unknown error'}"
+    supported = info.data.get("supported_actions", [])
+    if "user:update_group" not in supported:
+        return "Error: Bridge does not support 'user:update_group' yet."
 
-    if success:
-        return f"# User Group Updated\n\nUser {uid} has been assigned to usergroup {usergroup}."
-    else:
-        return f"Error: Failed to update user {uid}."
+    result = await bridge.call_async(
+        "user:update_group",
+        uid=uid,
+        usergroup=usergroup,
+        additionalgroups=additionalgroups,
+    )
+
+    if not result.success:
+        return f"Error: Bridge user:update_group failed: {result.error or 'unknown error'}"
+
+    return f"# User Group Updated (Bridge)\n\nUser {uid} has been assigned to usergroup {usergroup}."
 
 
 async def handle_user_ban(args: dict, db: Any, config: Any, sync_service: Any) -> str:
@@ -146,12 +161,28 @@ async def handle_user_ban(args: dict, db: Any, config: Any, sync_service: Any) -
     if not uid or not gid or not admin or not dateline:
         return "Error: 'uid', 'gid', 'admin', and 'dateline' are required."
 
-    ban_id = db.ban_user(uid, gid, admin, dateline, bantime, reason)
+    bridge = MyBBBridgeClient(config.mybb_root)
+    info = await bridge.call_async("info")
+    if not info.success:
+        return f"Error: Bridge info failed: {info.error or 'unknown error'}"
+    supported = info.data.get("supported_actions", [])
+    if "user:ban" not in supported:
+        return "Error: Bridge does not support 'user:ban' yet."
 
-    if ban_id:
-        return f"# User Banned\n\nUser {uid} has been banned. Ban ID: {ban_id}."
-    else:
-        return f"Error: Failed to ban user {uid}."
+    result = await bridge.call_async(
+        "user:ban",
+        uid=uid,
+        gid=gid,
+        admin=admin,
+        dateline=dateline,
+        bantime=bantime,
+        reason=reason,
+    )
+
+    if not result.success:
+        return f"Error: Bridge user:ban failed: {result.error or 'unknown error'}"
+
+    return f"# User Banned (Bridge)\n\nUser {uid} has been banned."
 
 
 async def handle_user_unban(args: dict, db: Any, config: Any, sync_service: Any) -> str:
@@ -172,12 +203,19 @@ async def handle_user_unban(args: dict, db: Any, config: Any, sync_service: Any)
     if not uid:
         return "Error: 'uid' is required."
 
-    success = db.unban_user(uid)
+    bridge = MyBBBridgeClient(config.mybb_root)
+    info = await bridge.call_async("info")
+    if not info.success:
+        return f"Error: Bridge info failed: {info.error or 'unknown error'}"
+    supported = info.data.get("supported_actions", [])
+    if "user:unban" not in supported:
+        return "Error: Bridge does not support 'user:unban' yet."
 
-    if success:
-        return f"# User Unbanned\n\nUser {uid} has been unbanned successfully."
-    else:
-        return f"Error: Failed to unban user {uid} (may not be banned)."
+    result = await bridge.call_async("user:unban", uid=uid)
+    if not result.success:
+        return f"Error: Bridge user:unban failed: {result.error or 'unknown error'}"
+
+    return f"# User Unbanned (Bridge)\n\nUser {uid} has been unbanned successfully."
 
 
 async def handle_usergroup_list(args: dict, db: Any, config: Any, sync_service: Any) -> str:

@@ -291,8 +291,8 @@ class TestModerationLogging:
         with patch.object(db, 'cursor') as mock_cursor_ctx:
             mock_cursor = MagicMock()
             mock_cursor.fetchall.return_value = [
-                {'lid': 1, 'uid': 5, 'action': 'Thread closed'},
-                {'lid': 2, 'uid': 5, 'action': 'Post deleted'}
+                {'uid': 5, 'action': 'Thread closed', 'dateline': 1700000000},
+                {'uid': 5, 'action': 'Post deleted', 'dateline': 1700000100}
             ]
             mock_cursor_ctx.return_value.__enter__.return_value = mock_cursor
 

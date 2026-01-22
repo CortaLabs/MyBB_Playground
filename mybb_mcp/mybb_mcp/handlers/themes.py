@@ -4,7 +4,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-import httpx
+from ..bridge import MyBBBridgeClient
 
 
 # ==================== Theme List Handlers ====================
@@ -30,7 +30,7 @@ async def handle_list_themes(args: dict, db: Any, config: Any, sync_service: Any
     manager = PluginManager()
 
     # Get workspace themes
-    workspace_themes = manager.db.list_projects(project_type="theme")
+    workspace_themes = manager.db.list_projects(type="theme")
 
     # Get MyBB themes (existing behavior)
     mybb_themes = db.list_themes()
@@ -121,7 +121,7 @@ async def handle_read_stylesheet(args: dict, db: Any, config: Any, sync_service:
         theme_codename = theme['name'].lower().replace(' ', '_')
 
         # Check if this theme is workspace-managed
-        workspace_themes = manager.db.list_projects(project_type="theme")
+        workspace_themes = manager.db.list_projects(type="theme")
         managed_theme = next((t for t in workspace_themes if t['codename'] == theme_codename), None)
 
         if managed_theme:
@@ -182,14 +182,14 @@ async def handle_write_stylesheet(args: dict, db: Any, config: Any, sync_service
 
     # Get theme name from tid
     theme = db.get_theme(sheet['tid'])
-    wrote_to_workspace = False
+    result = ""
 
     if theme:
         # Convert theme name to codename format for matching
         theme_codename = theme['name'].lower().replace(' ', '_')
 
         # Check if this theme is workspace-managed
-        workspace_themes = manager.db.list_projects(project_type="theme")
+        workspace_themes = manager.db.list_projects(type="theme")
         managed_theme = next((t for t in workspace_themes if t['codename'] == theme_codename), None)
 
         if managed_theme:
@@ -200,32 +200,30 @@ async def handle_write_stylesheet(args: dict, db: Any, config: Any, sync_service
             stylesheet_file = stylesheets_dir / sheet['name']
 
             stylesheet_file.write_text(css, encoding='utf-8')
-            wrote_to_workspace = True
-
-            # Optionally sync to DB as well (keeping DB in sync for now)
-            db.update_stylesheet(sid, css)
-
             result = f"Stylesheet {sheet['name']} updated in workspace: `{stylesheet_file}`"
         else:
-            # Fall back to DB write for unmanaged themes
-            if not db.update_stylesheet(sid, css):
-                return f"Failed to update stylesheet {sid}."
-            result = f"Stylesheet {sid} updated in database."
+            result = f"Stylesheet {sid} prepared for bridge update."
     else:
-        # No theme found, fall back to DB write
-        if not db.update_stylesheet(sid, css):
-            return f"Failed to update stylesheet {sid}."
-        result = f"Stylesheet {sid} updated in database."
+        result = f"Stylesheet {sid} prepared for bridge update."
 
-    # Try cache refresh
-    try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            resp = await client.get(f"{config.mybb_url}/cachecss.php")
-            result += " Cache refresh triggered." if resp.status_code == 200 else ""
-    except:
-        pass
+    bridge = MyBBBridgeClient(config.mybb_root)
+    info = await bridge.call_async("info")
+    if not info.success:
+        return f"Error: Bridge info failed: {info.error or 'unknown error'}"
+    supported = info.data.get("supported_actions", [])
+    if "stylesheet:write" not in supported:
+        return "Error: Bridge does not support 'stylesheet:write' yet."
 
-    return result
+    bridge_result = await bridge.call_async(
+        "stylesheet:write",
+        sid=sid,
+        stylesheet=css,
+    )
+
+    if not bridge_result.success:
+        return f"Error: Bridge stylesheet:write failed: {bridge_result.error or 'unknown error'}"
+
+    return f"{result} (Bridge update complete)"
 
 
 # ==================== Theme Creation Handler ====================

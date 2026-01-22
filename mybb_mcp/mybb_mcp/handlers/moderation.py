@@ -3,6 +3,8 @@
 from datetime import datetime
 from typing import Any
 
+from ..bridge import MyBBBridgeClient
+
 
 # ==================== Moderation Action Handlers ====================
 
@@ -26,12 +28,20 @@ async def handle_mod_close_thread(args: dict, db: Any, config: Any, sync_service
     if not tid:
         return "Error: 'tid' is required."
 
-    success = db.close_thread(tid, closed)
-    if success:
-        status = "closed" if closed else "opened"
-        return f"# Thread {status.title()}\n\nThread {tid} has been {status} successfully."
-    else:
-        return f"Error: Failed to update thread {tid}."
+    bridge = MyBBBridgeClient(config.mybb_root)
+    info = await bridge.call_async("info")
+    if not info.success:
+        return f"Error: Bridge info failed: {info.error or 'unknown error'}"
+    supported = info.data.get("supported_actions", [])
+    if "mod:close_thread" not in supported:
+        return "Error: Bridge does not support 'mod:close_thread' yet."
+
+    result = await bridge.call_async("mod:close_thread", tid=tid, closed=1 if closed else 0)
+    if not result.success:
+        return f"Error: Bridge mod:close_thread failed: {result.error or 'unknown error'}"
+
+    status = "closed" if closed else "opened"
+    return f"# Thread {status.title()} (Bridge)\n\nThread {tid} has been {status} successfully."
 
 
 async def handle_mod_stick_thread(args: dict, db: Any, config: Any, sync_service: Any) -> str:
@@ -54,12 +64,20 @@ async def handle_mod_stick_thread(args: dict, db: Any, config: Any, sync_service
     if not tid:
         return "Error: 'tid' is required."
 
-    success = db.stick_thread(tid, sticky)
-    if success:
-        status = "sticked" if sticky else "unsticked"
-        return f"# Thread {status.title()}\n\nThread {tid} has been {status} successfully."
-    else:
-        return f"Error: Failed to update thread {tid}."
+    bridge = MyBBBridgeClient(config.mybb_root)
+    info = await bridge.call_async("info")
+    if not info.success:
+        return f"Error: Bridge info failed: {info.error or 'unknown error'}"
+    supported = info.data.get("supported_actions", [])
+    if "mod:stick_thread" not in supported:
+        return "Error: Bridge does not support 'mod:stick_thread' yet."
+
+    result = await bridge.call_async("mod:stick_thread", tid=tid, sticky=1 if sticky else 0)
+    if not result.success:
+        return f"Error: Bridge mod:stick_thread failed: {result.error or 'unknown error'}"
+
+    status = "sticked" if sticky else "unsticked"
+    return f"# Thread {status.title()} (Bridge)\n\nThread {tid} has been {status} successfully."
 
 
 async def handle_mod_approve_thread(args: dict, db: Any, config: Any, sync_service: Any) -> str:
@@ -82,12 +100,20 @@ async def handle_mod_approve_thread(args: dict, db: Any, config: Any, sync_servi
     if not tid:
         return "Error: 'tid' is required."
 
-    success = db.approve_thread(tid, approve)
-    if success:
-        status = "approved" if approve else "unapproved"
-        return f"# Thread {status.title()}\n\nThread {tid} has been {status} successfully."
-    else:
-        return f"Error: Failed to update thread {tid}."
+    bridge = MyBBBridgeClient(config.mybb_root)
+    info = await bridge.call_async("info")
+    if not info.success:
+        return f"Error: Bridge info failed: {info.error or 'unknown error'}"
+    supported = info.data.get("supported_actions", [])
+    if "mod:approve_thread" not in supported:
+        return "Error: Bridge does not support 'mod:approve_thread' yet."
+
+    result = await bridge.call_async("mod:approve_thread", tid=tid, approve=1 if approve else 0)
+    if not result.success:
+        return f"Error: Bridge mod:approve_thread failed: {result.error or 'unknown error'}"
+
+    status = "approved" if approve else "unapproved"
+    return f"# Thread {status.title()} (Bridge)\n\nThread {tid} has been {status} successfully."
 
 
 async def handle_mod_approve_post(args: dict, db: Any, config: Any, sync_service: Any) -> str:
@@ -110,12 +136,20 @@ async def handle_mod_approve_post(args: dict, db: Any, config: Any, sync_service
     if not pid:
         return "Error: 'pid' is required."
 
-    success = db.approve_post(pid, approve)
-    if success:
-        status = "approved" if approve else "unapproved"
-        return f"# Post {status.title()}\n\nPost {pid} has been {status} successfully."
-    else:
-        return f"Error: Failed to update post {pid}."
+    bridge = MyBBBridgeClient(config.mybb_root)
+    info = await bridge.call_async("info")
+    if not info.success:
+        return f"Error: Bridge info failed: {info.error or 'unknown error'}"
+    supported = info.data.get("supported_actions", [])
+    if "mod:approve_post" not in supported:
+        return "Error: Bridge does not support 'mod:approve_post' yet."
+
+    result = await bridge.call_async("mod:approve_post", pid=pid, approve=1 if approve else 0)
+    if not result.success:
+        return f"Error: Bridge mod:approve_post failed: {result.error or 'unknown error'}"
+
+    status = "approved" if approve else "unapproved"
+    return f"# Post {status.title()} (Bridge)\n\nPost {pid} has been {status} successfully."
 
 
 async def handle_mod_soft_delete_thread(args: dict, db: Any, config: Any, sync_service: Any) -> str:
@@ -138,13 +172,21 @@ async def handle_mod_soft_delete_thread(args: dict, db: Any, config: Any, sync_s
     if not tid:
         return "Error: 'tid' is required."
 
-    # Use existing delete_thread method with soft parameter
-    success = db.delete_thread(tid, soft=delete)
-    if success:
-        status = "soft deleted" if delete else "restored"
-        return f"# Thread {status.title()}\n\nThread {tid} has been {status} successfully."
-    else:
-        return f"Error: Failed to update thread {tid}."
+    bridge = MyBBBridgeClient(config.mybb_root)
+    info = await bridge.call_async("info")
+    if not info.success:
+        return f"Error: Bridge info failed: {info.error or 'unknown error'}"
+    supported = info.data.get("supported_actions", [])
+    action = "mod:soft_delete_thread" if delete else "mod:restore_thread"
+    if action not in supported:
+        return f"Error: Bridge does not support '{action}' yet."
+
+    result = await bridge.call_async(action, tid=tid)
+    if not result.success:
+        return f"Error: Bridge {action} failed: {result.error or 'unknown error'}"
+
+    status = "soft deleted" if delete else "restored"
+    return f"# Thread {status.title()} (Bridge)\n\nThread {tid} has been {status} successfully."
 
 
 async def handle_mod_soft_delete_post(args: dict, db: Any, config: Any, sync_service: Any) -> str:
@@ -167,12 +209,21 @@ async def handle_mod_soft_delete_post(args: dict, db: Any, config: Any, sync_ser
     if not pid:
         return "Error: 'pid' is required."
 
-    success = db.soft_delete_post(pid, delete)
-    if success:
-        status = "soft deleted" if delete else "restored"
-        return f"# Post {status.title()}\n\nPost {pid} has been {status} successfully."
-    else:
-        return f"Error: Failed to update post {pid}."
+    bridge = MyBBBridgeClient(config.mybb_root)
+    info = await bridge.call_async("info")
+    if not info.success:
+        return f"Error: Bridge info failed: {info.error or 'unknown error'}"
+    supported = info.data.get("supported_actions", [])
+    action = "mod:soft_delete_post" if delete else "mod:restore_post"
+    if action not in supported:
+        return f"Error: Bridge does not support '{action}' yet."
+
+    result = await bridge.call_async(action, pid=pid)
+    if not result.success:
+        return f"Error: Bridge {action} failed: {result.error or 'unknown error'}"
+
+    status = "soft deleted" if delete else "restored"
+    return f"# Post {status.title()} (Bridge)\n\nPost {pid} has been {status} successfully."
 
 
 # ==================== Moderation Log Handlers ====================
@@ -205,14 +256,15 @@ async def handle_modlog_list(args: dict, db: Any, config: Any, sync_service: Any
 
     lines = [
         f"# Moderation Log ({len(entries)} entries)\n",
-        "| Log ID | User ID | Forum | Thread | Post | Action | Date |",
-        "|--------|---------|-------|--------|------|--------|------|"
+        "| User ID | Forum | Thread | Post | Action | Date |",
+        "|---------|-------|--------|------|--------|------|"
     ]
 
     for entry in entries:
-        date = datetime.fromtimestamp(entry['dateline']).strftime('%Y-%m-%d %H:%M')
+        dateline = entry.get('dateline', 0)
+        date = datetime.fromtimestamp(dateline).strftime('%Y-%m-%d %H:%M') if dateline else "N/A"
         lines.append(
-            f"| {entry['lid']} | {entry['uid']} | {entry['fid']} | {entry['tid']} | {entry['pid']} | {entry['action']} | {date} |"
+            f"| {entry.get('uid', 0)} | {entry.get('fid', 0)} | {entry.get('tid', 0)} | {entry.get('pid', 0)} | {entry.get('action', '')} | {date} |"
         )
 
     return "\n".join(lines)
@@ -248,12 +300,29 @@ async def handle_modlog_add(args: dict, db: Any, config: Any, sync_service: Any)
     if not uid or not action:
         return "Error: 'uid' and 'action' are required."
 
-    log_id = db.add_modlog_entry(uid, fid, tid, pid, action, data, ipaddress)
+    bridge = MyBBBridgeClient(config.mybb_root)
+    info = await bridge.call_async("info")
+    if not info.success:
+        return f"Error: Bridge info failed: {info.error or 'unknown error'}"
+    supported = info.data.get("supported_actions", [])
+    if "modlog:add" not in supported:
+        return "Error: Bridge does not support 'modlog:add' yet."
 
-    if log_id:
-        return f"# Moderation Log Entry Added\n\nLog entry created with ID {log_id}."
-    else:
-        return "Error: Failed to create moderation log entry."
+    result = await bridge.call_async(
+        "modlog:add",
+        uid=uid,
+        logaction=action,
+        fid=fid,
+        tid=tid,
+        pid=pid,
+        data=data,
+        ipaddress=ipaddress,
+    )
+
+    if not result.success:
+        return f"Error: Bridge modlog:add failed: {result.error or 'unknown error'}"
+
+    return "# Moderation Log Entry Added (Bridge)\n\nLog entry created successfully."
 
 
 # Handler registry for moderation tools

@@ -231,9 +231,8 @@ if(defined('THIS_SCRIPT'))
     # Deactivation code
     deactivate_code = "    // Nothing to deactivate"
     if has_templates:
-        deactivate_code = f'''    // Remove template edits if any
-    require_once MYBB_ROOT.'inc/adminfunctions_templates.php';
-    // find_replace_templatesets('index', '#'.preg_quote('{{${codename}}}').'#', '');'''
+        deactivate_code = f'''    // Remove plugin templates
+    $db->delete_query('templates', "title LIKE '{codename}%'");'''
 
     # Install code
     install_parts = []
@@ -301,8 +300,6 @@ if(defined('THIS_SCRIPT'))
 
     # Uninstall code
     uninstall_parts = []
-    if has_templates:
-        uninstall_parts.append(f"    $db->delete_query('templates', \"title LIKE '{codename}%'\");")
     if has_settings:
         uninstall_parts.append(f"    $db->delete_query('settinggroups', \"name='{codename}'\");")
         uninstall_parts.append(f"    $db->delete_query('settings', \"name LIKE '{codename}%'\");")

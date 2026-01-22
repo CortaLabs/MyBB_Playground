@@ -1,8 +1,9 @@
 """Template handlers for MyBB MCP tools."""
 
-import re
+import json
 from typing import Any
 
+from ..bridge import MyBBBridgeClient
 
 # ==================== Template List Handlers ====================
 
@@ -117,29 +118,31 @@ async def handle_write_template(args: dict, db: Any, config: Any, sync_service: 
     if not title or not template:
         return "Error: 'title' and 'template' are required."
 
-    # Check for existing templates
-    master = db.get_template(title, -2)
-    custom = db.get_template(title, sid) if sid != -2 else None
+    bridge = MyBBBridgeClient(config.mybb_root)
+    info = await bridge.call_async("info")
+    if not info.success:
+        return f"Error: Bridge info failed: {info.error or 'unknown error'}"
+    supported = info.data.get("supported_actions", [])
+    if "template:write" not in supported:
+        return "Error: Bridge does not support 'template:write' yet."
 
-    if sid == -2:
-        # Updating master template
-        if master:
-            db.update_template(master['tid'], template)
-            return f"Master template '{title}' updated (TID {master['tid']})."
-        else:
-            tid = db.create_template(title, template, -2)
-            return f"Master template '{title}' created (TID {tid})."
-    else:
-        # Creating/updating custom template
-        if custom:
-            db.update_template(custom['tid'], template)
-            return f"Custom template '{title}' updated in set {sid} (TID {custom['tid']})."
-        else:
-            tid = db.create_template(title, template, sid)
-            msg = f"Custom template '{title}' created in set {sid} (TID {tid})."
-            if master:
-                msg += f" (Overrides master TID {master['tid']})"
-            return msg
+    result = await bridge.call_async(
+        "template:write",
+        title=title,
+        template=template,
+        sid=sid,
+    )
+
+    if not result.success:
+        return f"Error: Bridge template:write failed: {result.error or 'unknown error'}"
+
+    tid = result.data.get("tid")
+    action = "updated"
+    actions_taken = result.data.get("actions_taken", [])
+    if "template_created" in actions_taken:
+        action = "created"
+    return f"Template '{title}' {action} in set {sid} (TID {tid})."
+
 
 
 # ==================== Template Find/Replace Handler ====================
@@ -166,49 +169,33 @@ async def handle_template_find_replace(args: dict, db: Any, config: Any, sync_se
     if not title or not find or replace is None:
         return "Error: 'title', 'find', and 'replace' are required."
 
-    # Get all matching templates
-    templates = db.find_templates_for_replace(title, template_sets)
+    bridge = MyBBBridgeClient(config.mybb_root)
+    info = await bridge.call_async("info")
+    if not info.success:
+        return f"Error: Bridge info failed: {info.error or 'unknown error'}"
+    supported = info.data.get("supported_actions", [])
+    if "template:find_replace" not in supported:
+        return "Error: Bridge does not support 'template:find_replace' yet."
 
-    if not templates:
-        return f"No templates found matching '{title}' in specified template sets."
+    template_sets_csv = ",".join(str(s) for s in template_sets) if template_sets else None
+    result = await bridge.call_async(
+        "template:find_replace",
+        title=title,
+        find=find,
+        replace=replace,
+        template_sets=template_sets_csv,
+        regex=1 if use_regex else 0,
+        limit=limit,
+    )
 
-    modified_count = 0
-    modified_templates = []
+    if not result.success:
+        return f"Error: Bridge template:find_replace failed: {result.error or 'unknown error'}"
 
-    for template in templates:
-        original = template['template']
-
-        # Perform replacement
-        if use_regex:
-            try:
-                if limit == -1:
-                    new_content = re.sub(find, replace, original)
-                else:
-                    new_content = re.sub(find, replace, original, count=limit)
-            except re.error as e:
-                return f"Error: Invalid regex pattern: {e}"
-        else:
-            # Literal string replacement
-            if limit == -1:
-                new_content = original.replace(find, replace)
-            else:
-                new_content = original.replace(find, replace, limit)
-
-        # Only update if content changed
-        if new_content != original:
-            db.update_template(template['tid'], new_content)
-            modified_count += 1
-            modified_templates.append(f"- TID {template['tid']} (sid={template['sid']})")
-
-    if modified_count == 0:
+    updated = result.data.get("updated", False)
+    if not updated:
         return f"No modifications made. Pattern '{find}' not found in template '{title}'."
 
-    lines = [
-        f"# Find/Replace Results for '{title}'",
-        f"\nModified {modified_count} template(s):\n"
-    ]
-    lines.extend(modified_templates)
-    return "\n".join(lines)
+    return f"# Find/Replace Results for '{title}'\n\nModified templates via bridge."
 
 
 # ==================== Template Batch Handlers ====================
@@ -279,47 +266,29 @@ async def handle_template_batch_write(args: dict, db: Any, config: Any, sync_ser
     if not templates:
         return "Error: 'templates' list is required."
 
-    # Atomic operation: collect all changes first
-    operations = []
-    for item in templates:
-        title = item.get("title")
-        content = item.get("template")
+    bridge = MyBBBridgeClient(config.mybb_root)
+    info = await bridge.call_async("info")
+    if not info.success:
+        return f"Error: Bridge info failed: {info.error or 'unknown error'}"
+    supported = info.data.get("supported_actions", [])
+    if "template:batch_write" not in supported:
+        return "Error: Bridge does not support 'template:batch_write' yet."
 
-        if not title or not content:
-            return f"Error: Each template must have 'title' and 'template' fields."
+    templates_json = json.dumps(templates)
+    result = await bridge.call_async(
+        "template:batch_write",
+        sid=sid,
+        templates_json=templates_json,
+    )
 
-        # Check if template exists
-        existing = db.get_template(title, sid)
-        operations.append({
-            "title": title,
-            "content": content,
-            "tid": existing['tid'] if existing else None,
-            "action": "update" if existing else "create"
-        })
+    if not result.success:
+        return f"Error: Bridge template:batch_write failed: {result.error or 'unknown error'}"
 
-    # Execute all operations
-    created = []
-    updated = []
-
-    for op in operations:
-        if op["action"] == "update":
-            db.update_template(op["tid"], op["content"])
-            updated.append(f"- {op['title']} (TID {op['tid']})")
-        else:
-            tid = db.create_template(op["title"], op["content"], sid)
-            created.append(f"- {op['title']} (TID {tid})")
-
+    created = result.data.get("created", 0)
+    updated = result.data.get("updated", 0)
     lines = [f"# Batch Write Results (sid={sid})\n"]
-
-    if created:
-        lines.append(f"Created {len(created)} template(s):")
-        lines.extend(created)
-        lines.append("")
-
-    if updated:
-        lines.append(f"Updated {len(updated)} template(s):")
-        lines.extend(updated)
-
+    lines.append(f"Created {created} template(s).")
+    lines.append(f"Updated {updated} template(s).")
     return "\n".join(lines)
 
 

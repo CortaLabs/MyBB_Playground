@@ -231,10 +231,11 @@ Codename: test_doc_plugin
 
 ### 7. mybb_plugin_activate
 
-**Purpose:** Activate a plugin by adding it to the active plugins cache
+**Purpose:** Activate a plugin via PHP lifecycle (_activate) using the bridge
 
 **Parameters:**
 - `name` (string, required): Plugin codename to activate
+- `force` (boolean, optional): Skip compatibility check (default: false)
 
 **Example:**
 ```
@@ -244,25 +245,19 @@ Parameters: {"name": "test_doc_plugin"}
 Response:
 # Plugin Activated: test_doc_plugin
 
-Added to active plugins cache.
-
-**Warning**: This does NOT execute the PHP `test_doc_plugin_activate()` function.
-For full activation including database setup, templates, and settings,
-use MyBB's Admin CP at http://localhost:8022/admin/index.php?module=config-plugins
+**PHP Lifecycle Actions:** activated
 ```
 
 **Notes:**
-- **CRITICAL WARNING:** Only updates datacache, does NOT run _activate() function
-- **Does NOT:** Create templates, add settings, or run database changes
-- **Use case:** Testing plugin state or quick cache manipulation
-- **For full activation:** Use MyBB Admin CP instead
-- Plugin will be "active" but without templates/settings/database
+- Uses the PHP bridge to run `_activate()` and update plugin cache
+- **Requires plugin to be installed** (use `mybb_plugin_install` or `mybb_plugin_deploy(action="reinstall")` first)
+- Managed plugins are deployed to TestForum before activation
 
 ---
 
 ### 8. mybb_plugin_deactivate
 
-**Purpose:** Deactivate a plugin by removing it from the active plugins cache
+**Purpose:** Deactivate a plugin via PHP lifecycle (_deactivate) using the bridge
 
 **Parameters:**
 - `name` (string, required): Plugin codename to deactivate
@@ -275,23 +270,37 @@ Parameters: {"name": "test_doc_plugin"}
 Response:
 # Plugin Deactivated: test_doc_plugin
 
-Removed from active plugins cache.
-
-**Warning**: This does NOT execute the PHP `test_doc_plugin_deactivate()` function.
-For full deactivation including cleanup, use MyBB's Admin CP at
-http://localhost:8022/admin/index.php?module=config-plugins
+**PHP Lifecycle Actions:** deactivated
 ```
 
 **Notes:**
-- **CRITICAL WARNING:** Only updates datacache, does NOT run _deactivate() function
-- **Does NOT:** Remove templates, clean up settings, or run cleanup code
-- **Use case:** Quick cache manipulation for testing
-- **For full deactivation:** Use MyBB Admin CP instead
-- Templates/settings will remain in database
+- Uses the PHP bridge to run `_deactivate()` and update plugin cache
+- Does not run `_uninstall()` (use `mybb_plugin_uninstall` or deploy reinstall)
 
 ---
 
-### 9. mybb_plugin_is_installed
+### 9. mybb_plugin_deploy
+
+**Purpose:** Wrapper for activate/deactivate or full reinstall
+
+**Parameters:**
+- `codename` (string, required): Plugin codename
+- `action` (string, required): `activate`, `deactivate`, or `reinstall`
+- `force` (boolean, optional): Skip compatibility check (default: false)
+
+**Example (full reinstall):**
+```
+Tool: mcp__mybb__mybb_plugin_deploy
+Parameters: {"codename": "test_doc_plugin", "action": "reinstall"}
+```
+
+**Notes:**
+- `reinstall` runs: deactivate + uninstall + remove files + install + activate
+- Use when you need a clean redeploy without manual steps
+
+---
+
+### 10. mybb_plugin_is_installed
 
 **Purpose:** Check if a plugin is currently installed/active
 
@@ -328,7 +337,7 @@ Plugin is not in the active plugins cache.
 
 ## Hook Discovery Tools
 
-### 10. mybb_list_hooks
+### 11. mybb_list_hooks
 
 **Purpose:** List available MyBB hooks organized by category
 
@@ -561,24 +570,19 @@ Found 2 usage(s) in installed plugins:
 
 ## Important Warnings
 
-### ⚠️ Activation/Deactivation Tools Are Cache-Only
+### ⚠️ Activation/Deactivation Tools Use the Bridge
 
-**CRITICAL:** The `mybb_plugin_activate` and `mybb_plugin_deactivate` tools:
-- **Only modify the datacache**
-- **Do NOT execute** _activate() or _deactivate() functions
-- **Do NOT create/remove** templates, settings, or database tables
-- **Use case:** Testing, cache manipulation, development workflows
-- **For production:** Always use MyBB Admin CP for full activation/deactivation
+`mybb_plugin_activate` and `mybb_plugin_deactivate` now execute PHP lifecycle via the CLI bridge.
 
-**Why this limitation?**
-- Executing PHP functions requires MyBB context (global variables, database connection, etc.)
-- MCP tools operate at file/database level, not PHP runtime level
-- Full activation involves complex template/settings/database operations
+**Key behavior:**
+- Runs `_activate()` / `_deactivate()` and updates plugin cache
+- **Does NOT run** `_install()` or `_uninstall()` (use install/uninstall or deploy)
+- Requires the plugin to already be installed
 
 **Best practice:**
-- Use MCP tools to create/analyze plugins
-- Use MyBB Admin CP for install/activate/deactivate
-- Use MCP tools to verify state and debug
+- Use `mybb_plugin_install` for DB setup (_install + activate)
+- Use `mybb_plugin_deploy(action="reinstall")` for a full clean cycle
+- Use MyBB Admin CP when you need manual UI confirmation
 
 ---
 
@@ -651,9 +655,9 @@ Example:
 
 ### 🐛 Common Pitfalls
 
-1. **Activating via MCP and expecting full functionality**
-   - ❌ `mybb_plugin_activate()` → Plugin appears active but has no templates/settings
-   - ✅ Use MyBB Admin CP for activation
+1. **Activating without installing first**
+   - ❌ `mybb_plugin_activate()` on an uninstalled plugin → fails or missing DB setup
+   - ✅ Use `mybb_plugin_install()` or `mybb_plugin_deploy(action="reinstall")` first
 
 2. **Confusing file listing with activation status**
    - ❌ "Plugin shows in `mybb_list_plugins()` so it's active"
@@ -683,8 +687,9 @@ Example:
 | mybb_analyze_plugin | Analyze structure | No | No |
 | mybb_plugin_list_installed | List active plugins | No | No |
 | mybb_plugin_info | Get metadata | No | No |
-| mybb_plugin_activate | Activate (cache) | No | Yes (cache only) |
-| mybb_plugin_deactivate | Deactivate (cache) | No | Yes (cache only) |
+| mybb_plugin_activate | Activate (PHP lifecycle) | No | Yes (PHP lifecycle) |
+| mybb_plugin_deactivate | Deactivate (PHP lifecycle) | No | Yes (PHP lifecycle) |
+| mybb_plugin_deploy | Wrapper (activate/deactivate/reinstall) | No | Yes (lifecycle) |
 | mybb_plugin_is_installed | Check status | No | No |
 | mybb_list_hooks | List hooks (static) | No | No |
 | mybb_hooks_discover | Find hooks (scan) | No | No |
@@ -700,6 +705,6 @@ Example:
 
 ---
 
-**Last Updated:** 2026-01-17
+**Last Updated:** 2026-01-21
 **Tested With:** MyBB 1.8.x
 **MCP Version:** Latest

@@ -200,6 +200,8 @@ Would show recent task executions with timestamps and status
 
 ## Moderation Tools
 
+**Bridge-backed:** All moderation mutations now execute via the PHP bridge to ensure MyBB-native side effects (counters, logs, cache updates).
+
 ### mybb_mod_close_thread
 
 **Purpose:** Close or open a thread to prevent/allow new replies.
@@ -459,6 +461,8 @@ Error: Failed to create moderation log entry.
 ---
 
 ## User Management Tools
+
+**Bridge-backed:** User mutations (group changes, ban/unban) now execute via the PHP bridge to ensure MyBB-native side effects.
 
 ### mybb_user_get
 

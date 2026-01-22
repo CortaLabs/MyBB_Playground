@@ -332,18 +332,19 @@ PLUGIN_TOOLS = [
     ),
     Tool(
         name="mybb_plugin_activate",
-        description="Activate a plugin by adding it to the active plugins cache. Note: This does NOT execute the PHP _activate() function - that must be done through MyBB's admin panel.",
+        description="Activate a plugin via PHP lifecycle (_activate) using the bridge. Requires plugin to already be installed; deploys files for managed plugins.",
         inputSchema={
             "type": "object",
             "properties": {
                 "name": {"type": "string", "description": "Plugin codename to activate."},
+                "force": {"type": "boolean", "description": "Skip compatibility check.", "default": False},
             },
             "required": ["name"],
         },
     ),
     Tool(
         name="mybb_plugin_deactivate",
-        description="Deactivate a plugin by removing it from the active plugins cache. Note: This does NOT execute the PHP _deactivate() function - that must be done through MyBB's admin panel.",
+        description="Deactivate a plugin via PHP lifecycle (_deactivate) using the bridge.",
         inputSchema={
             "type": "object",
             "properties": {
@@ -386,6 +387,23 @@ PLUGIN_TOOLS = [
                 "remove_files": {"type": "boolean", "description": "Also remove plugin files from TestForum.", "default": False},
             },
             "required": ["codename"],
+        },
+    ),
+    Tool(
+        name="mybb_plugin_deploy",
+        description="Deploy plugin lifecycle wrapper: activate, deactivate, or full reinstall (uninstall+remove files+install).",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "codename": {"type": "string", "description": "Plugin codename (without .php)."},
+                "action": {
+                    "type": "string",
+                    "enum": ["activate", "deactivate", "reinstall"],
+                    "description": "Deploy action to perform."
+                },
+                "force": {"type": "boolean", "description": "Skip compatibility check.", "default": False},
+            },
+            "required": ["codename", "action"],
         },
     ),
     Tool(
@@ -691,8 +709,11 @@ CONTENT_TOOLS = [
                 "pid": {"type": "integer", "description": "Post ID"},
                 "message": {"type": "string", "description": "New post content (BBCode)"},
                 "subject": {"type": "string", "description": "New post subject"},
-                "edituid": {"type": "integer", "description": "Editor user ID"},
+                "edituid": {"type": "integer", "description": "Editor user ID (legacy name)"},
+                "edit_uid": {"type": "integer", "description": "Editor user ID"},
                 "editreason": {"type": "string", "description": "Edit reason text", "default": ""},
+                "signature": {"type": "integer", "description": "Include signature (1=yes, 0=no)"},
+                "disablesmilies": {"type": "integer", "description": "Disable smilies (1=yes, 0=no)"},
             },
             "required": ["pid"],
         },
@@ -705,6 +726,7 @@ CONTENT_TOOLS = [
             "properties": {
                 "pid": {"type": "integer", "description": "Post ID"},
                 "soft": {"type": "boolean", "description": "Soft delete (visible=-1) or permanent", "default": True},
+                "restore": {"type": "boolean", "description": "Restore a soft-deleted post", "default": False},
             },
             "required": ["pid"],
         },
@@ -1314,6 +1336,50 @@ USER_TOOLS = [
 ]
 
 
+# ==================== Language Validation Tools ====================
+
+LANGUAGE_TOOLS = [
+    Tool(
+        name="mybb_lang_validate",
+        description="Validate language files for a plugin. Finds missing definitions (code uses $lang->x but not defined), unused definitions, and potential typos. Works on workspace files only.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "codename": {"type": "string", "description": "Plugin codename to validate"},
+                "include_templates": {"type": "boolean", "description": "Scan templates for {$lang->x} usage", "default": True},
+                "fix_suggestions": {"type": "boolean", "description": "Include auto-fix suggestions", "default": True},
+            },
+            "required": ["codename"],
+        },
+    ),
+    Tool(
+        name="mybb_lang_generate_stub",
+        description="Generate missing language definitions as PHP code. Use after mybb_lang_validate finds missing definitions.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "codename": {"type": "string", "description": "Plugin codename"},
+                "output": {"type": "string", "enum": ["stub", "patch", "inline"], "description": "Output format", "default": "stub"},
+                "default_values": {"type": "string", "enum": ["empty", "key_as_value", "placeholder"], "description": "How to generate default values", "default": "placeholder"},
+            },
+            "required": ["codename"],
+        },
+    ),
+    Tool(
+        name="mybb_lang_scan_usage",
+        description="Scan files for language variable usage ($lang->x and {$lang->x}). Low-level tool for exploring language usage in any path.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "File or directory to scan (relative to repo root or absolute)"},
+                "output": {"type": "string", "enum": ["list", "grouped", "json"], "description": "Output format", "default": "grouped"},
+            },
+            "required": ["path"],
+        },
+    ),
+]
+
+
 # ==================== Combined Tool List ====================
 
 ALL_TOOLS = (
@@ -1329,9 +1395,10 @@ ALL_TOOLS = (
     SEARCH_TOOLS +
     ADMIN_TOOLS +
     MODERATION_TOOLS +
-    USER_TOOLS
+    USER_TOOLS +
+    LANGUAGE_TOOLS
 )
 
 # Tool count verification
-EXPECTED_TOOL_COUNT = 99  # Was 94, added 5 server orchestration tools
+EXPECTED_TOOL_COUNT = 103  # Was 99, added 3 language validation tools
 assert len(ALL_TOOLS) == EXPECTED_TOOL_COUNT, f"Expected {EXPECTED_TOOL_COUNT} tools, got {len(ALL_TOOLS)}"

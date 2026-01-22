@@ -590,12 +590,15 @@ class MyBBDatabase:
         Returns:
             New forum ID (fid)
         """
+        if not parentlist:
+            parentlist = str(pid) if pid else "0"
+
         with self.cursor() as cur:
             cur.execute(
                 f"INSERT INTO {self.table('forums')} "
-                f"(name, description, type, pid, parentlist, disporder, active, open) "
-                f"VALUES (%s, %s, %s, %s, %s, %s, 1, 1)",
-                (name, description, forum_type, pid, parentlist, disporder)
+                f"(name, description, type, pid, parentlist, disporder, active, open, rules) "
+                f"VALUES (%s, %s, %s, %s, %s, %s, 1, 1, %s)",
+                (name, description, forum_type, pid, parentlist, disporder, "")
             )
             return cur.lastrowid
 
