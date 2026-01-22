@@ -1,11 +1,46 @@
 # CLAUDE.md - MyBB Playground
 
+## 🚨 CRITICAL DATABASE ACCESS RULE 🚨
+
+**ABSOLUTE PROHIBITION - NO EXCEPTIONS:**
+
+**NEVER, EVER connect to the MyBB database directly.** This includes:
+- ❌ NO direct MySQL/MariaDB connections
+- ❌ NO raw SQL queries outside of MCP tools
+- ❌ NO database clients or connection attempts
+- ❌ NO pymysql, mysql-connector, or any DB libraries
+- ❌ NO reading `.env` to get DB credentials for direct access
+
+**ONLY use MCP tools to interact with MyBB:**
+- ✅ Use `mybb_*` MCP tools exclusively
+- ✅ All database operations go through the MCP server
+- ✅ The MCP server handles all DB connections internally
+- ✅ If an MCP tool doesn't exist for what you need, REQUEST ONE
+
+**This applies to:**
+- The main Claude Code orchestrator
+- ALL subagents (research, architect, coder, review, etc.)
+- ANY agent spawned for ANY purpose
+- Testing, debugging, exploration - NO EXCEPTIONS
+
+**Why this rule exists:**
+- The MCP server manages connection pooling and safety
+- Direct DB access bypasses cache invalidation
+- Multiple connections cause race conditions
+- This is a HARD BOUNDARY - violating it breaks the entire system
+
+**If you need database access that an MCP tool doesn't provide:**
+1. Document what you need
+2. Ask the user
+3. Wait for a new MCP tool to be created
+4. DO NOT improvise with direct DB access
+
 ## Project Overview
 
 AI-assisted MyBB development toolkit providing MCP tools for Claude Code to interact with MyBB installations. The goal is to make MyBB plugin and theme development accessible through natural language.
 
 **Key Components:**
-- `mybb_mcp/` — Python MCP server exposing 94+ MyBB tools to Claude
+- `mybb_mcp/` — Python MCP server exposing 100+ MyBB tools to Claude
 - `TestForum/` — Local MyBB 1.8.x installation for development
 - `mybb_sync/` — Template/stylesheet disk sync with live file watching
 - `plugin_manager/` — Plugin/theme workspace with deployment and PHP lifecycle execution
@@ -14,6 +49,7 @@ AI-assisted MyBB development toolkit providing MCP tools for Claude Code to inte
 - Always try to conserve your context window, delegate fixes and research as needed.  Use the subagents rather than trying to do everything yourself.
 - Always wait for subagents to complete, rather than checking on them.  This is a huge context killer.
 - Append Entry audit notes regularly, as the orchestrator this is a real solid approach to passing context to downstream agents.
+- **Codex CLI note:** Codex does not support subagents in this repo. In Codex, treat “agent roles” as phases you execute yourself and follow `AGENTS.md` for the single-agent protocol and enforcement gates.
 
 ## Forbidden Operations
 
@@ -34,6 +70,11 @@ AI-assisted MyBB development toolkit providing MCP tools for Claude Code to inte
 - Use `mybb_plugin_install` to deploy - never copy files to TestForum manually
 - Check if a plugin exists in the system BEFORE assuming it doesn't
 - The correct database is `.plugin_manager/projects.db` at repo root
+
+**Lifecycle standard (templates vs DB):**
+- Activate/Deactivate handles templates (add/remove) and runtime wiring
+- Install/Uninstall handles DB setup/teardown (settings/tables)
+- Use `mybb_plugin_deploy` for full reinstall cycles when needed
 
 **When things go wrong:**
 - Don't try to "fix" by deleting and recreating
@@ -127,9 +168,9 @@ PRIVATE_THEMES_REMOTE=git@github.com:yourname/private-themes.git
 ```
 mybb_mcp/mybb_mcp/
 ├── server.py           # Orchestration layer (116 lines)
-├── tools_registry.py   # Tool definitions (94 tools)
+├── tools_registry.py   # Tool definitions (102 tools)
 ├── config.py           # Env/config loading
-├── handlers/           # Modular tool handlers (14 modules)
+├── handlers/           # Modular tool handlers (15 modules)
 │   ├── dispatcher.py   # Dictionary-based routing
 │   ├── templates.py    # 8 handlers
 │   ├── themes.py       # 5 handlers
@@ -141,12 +182,13 @@ mybb_mcp/mybb_mcp/
 │   ├── admin.py        # 11 handlers
 │   ├── tasks.py        # 6 handlers
 │   ├── sync.py         # 5 handlers
+│   ├── languages.py    # 3 handlers (language validation)
 │   └── database.py     # 1 handler
 ├── db/connection.py    # MySQL wrapper with MyBB-specific methods
 └── tools/plugins.py    # Plugin scaffolding + hooks reference
 ```
 
-**Tool Categories (99 tools):**
+**Tool Categories (102 tools):**
 - Templates (9): list, read, write, batch operations, find/replace, outdated detection
 - Themes/Stylesheets (6): list, read, write, create themes
 - Plugins (15): CRUD, hooks discovery, lifecycle management (install/uninstall with PHP execution)
@@ -155,6 +197,7 @@ mybb_mcp/mybb_mcp/
 - Search (4): posts, threads, users, advanced combined search
 - Admin/Settings (11): settings, cache, statistics
 - Tasks (6): scheduled task management
+- Language Validation (3): validate, generate stubs, scan usage
 - Disk Sync (5): export, import, watcher control
 - Server Orchestration (5): start, stop, status, logs, restart PHP dev server
 
@@ -293,6 +336,24 @@ Core files will be overwritten on MyBB upgrades. Hooks and plugins are the corre
   - File watcher auto-syncs changes to database when editing on disk
   - Templates are deployed during `mybb_plugin_install()` along with PHP files
 
+**CRITICAL: Updating Plugin Templates/Files:**
+- `mybb_plugin_install()` alone does NOT update templates that already exist in the database
+- To deploy template changes, you MUST do a full uninstall/reinstall cycle:
+  ```python
+  mybb_plugin_uninstall(codename, remove_files=True)  # Remove files from TestForum
+  mybb_plugin_install(codename)                        # Redeploy everything fresh
+  ```
+- This ensures templates, language files, and PHP files are all synced from workspace to TestForum
+- NEVER use `mybb_write_template`, `mybb_template_find_replace`, or other direct template MCP tools during plugin development — always edit workspace files and reinstall
+
+**Plugin Language Files:**
+- Language files live in workspace: `inc/languages/english/{codename}.lang.php` (frontend) and `inc/languages/english/admin/{codename}.lang.php` (admin)
+- Format: `$l['key'] = 'Value';` — accessed via `$lang->key` in PHP or `{$lang->key}` in templates
+- ALWAYS maintain language files alongside code changes — if you add `$lang->new_key` usage, add the definition
+- Use `mybb_lang_validate(codename)` to check for missing/unused definitions
+- Use `mybb_lang_generate_stub(codename)` to generate placeholder definitions for missing keys
+- Run validation before committing to catch language issues early
+
 **Theme Development:**
 - Themes live in workspace: `plugin_manager/themes/`
 - Stylesheets use copy-on-write inheritance from parent themes
@@ -407,6 +468,25 @@ GitHub repos use prefix from `.mybb-forge.yaml` (e.g., `mybb_playground_my_plugi
 - PHP plugins: `codename.php` (lowercase, underscores)
 - Templates: `template_name.html` (matches DB title)
 - Stylesheets: `name.css` (matches DB name)
+
+  ### Concurrent Scribe Agent Session Collision
+
+  **MCP Transport Limitation:** Session identity is `{repo_root}:{transport}:{agent_name}`. When multiple agents with the
+  **same name** work on **different Scribe projects** within the **same repository** concurrently, their sessions collide.
+
+  **Best Practice:** Use scoped agent names for concurrent work:
+  ```python
+  # ❌ Same name = collision
+  agent="CoderAgent"  # on project_x
+  agent="CoderAgent"  # on project_y → logs may go to wrong project!
+
+  # ✅ Scoped names = safe
+  agent="CoderAgent-ProjectX"
+  agent="CoderAgent-ProjectY"
+
+  Not affected: Sequential dispatches, different repositories, or single agent switching projects.
+
+  See docs/Scribe_Usage.md#concurrent-agent-naming-session-isolation for details.
 
 ## Scribe Orchestration Protocol
 
@@ -776,7 +856,7 @@ append_entry(
 |------|---------|
 | `mybb_mcp/mybb_mcp/server.py` | MCP server orchestration (116 lines) |
 | `mybb_mcp/mybb_mcp/tools_registry.py` | All 94 tool definitions |
-| `mybb_mcp/mybb_mcp/handlers/` | Modular tool handlers (14 modules, 94 handlers) |
+| `mybb_mcp/mybb_mcp/handlers/` | Modular tool handlers (15 modules, 102 handlers) |
 | `mybb_mcp/mybb_mcp/handlers/dispatcher.py` | Dictionary-based tool routing |
 | `mybb_mcp/mybb_mcp/db/connection.py` | Database operations for templates, themes, plugins |
 | `mybb_mcp/mybb_mcp/tools/plugins.py` | Plugin scaffolding templates and hooks reference |
@@ -794,7 +874,7 @@ Comprehensive technical documentation lives in `/docs/wiki/`. Use these for deta
 | Section | Index | What's There |
 |---------|-------|--------------|
 | **Getting Started** | [index](docs/wiki/getting_started/index.md) | Installation, quickstart tutorial, prerequisites |
-| **MCP Tools** | [index](docs/wiki/mcp_tools/index.md) | All 94+ tools with parameters, return formats, examples |
+| **MCP Tools** | [index](docs/wiki/mcp_tools/index.md) | All 102+ tools with parameters, return formats, examples |
 | **Plugin Manager** | [index](docs/wiki/plugin_manager/index.md) | Workspace, deployment, PHP lifecycle, database schema |
 | **Architecture** | [index](docs/wiki/architecture/index.md) | MCP server internals, disk sync, configuration |
 | **Best Practices** | [index](docs/wiki/best_practices/index.md) | Plugin/theme development patterns, security |
@@ -823,7 +903,7 @@ For building production-quality plugins with multiple files, JavaScript, AJAX, A
 docs/wiki/
 ├── index.md                    # Main entry point
 ├── getting_started/            # Installation, quickstart
-├── mcp_tools/                  # Tool reference (94+ tools)
+├── mcp_tools/                  # Tool reference (102+ tools)
 │   ├── index.md               # Overview + tool categories
 │   ├── templates.md           # 9 template tools
 │   ├── themes_stylesheets.md  # 6 theme/style tools
@@ -834,6 +914,7 @@ docs/wiki/
 │   ├── admin_settings.md      # 11 admin tools
 │   ├── tasks.md               # 6 task tools
 │   ├── disk_sync.md           # 5 sync tools
+│   ├── languages.md           # 3 language validation tools
 │   └── database.md            # 1 query tool
 ├── plugin_manager/             # Plugin Manager system
 ├── architecture/               # System internals
