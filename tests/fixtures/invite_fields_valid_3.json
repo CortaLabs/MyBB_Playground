@@ -1,0 +1,37 @@
+{
+  "version": "1.0",
+  "export_timestamp": "2026-01-21T06:05:00Z",
+  "field_count": 3,
+  "fields": [
+    {
+      "field_id": 1,
+      "field_name": "first_name",
+      "field_label": "First Name",
+      "field_description": "Enter your first name",
+      "field_type": "text",
+      "field_options": "",
+      "required": true,
+      "display_order": 1
+    },
+    {
+      "field_id": 2,
+      "field_name": "country",
+      "field_label": "Country",
+      "field_description": "Select your country",
+      "field_type": "select",
+      "field_options": "USA\nCanada\nUK\nAustralia",
+      "required": false,
+      "display_order": 2
+    },
+    {
+      "field_id": 3,
+      "field_name": "bio",
+      "field_label": "Biography",
+      "field_description": "Tell us about yourself",
+      "field_type": "textarea",
+      "field_options": "",
+      "required": false,
+      "display_order": 3
+    }
+  ]
+}

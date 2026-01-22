@@ -1,0 +1,57 @@
+{
+  "version": "1.0",
+  "export_timestamp": "2026-01-21T06:05:00Z",
+  "field_count": 5,
+  "fields": [
+    {
+      "field_id": 1,
+      "field_name": "username",
+      "field_label": "Username",
+      "field_description": "Choose your username",
+      "field_type": "text",
+      "field_options": "",
+      "required": true,
+      "display_order": 1
+    },
+    {
+      "field_id": 2,
+      "field_name": "about",
+      "field_label": "About You",
+      "field_description": "Tell us about yourself (multiline)",
+      "field_type": "textarea",
+      "field_options": "",
+      "required": false,
+      "display_order": 2
+    },
+    {
+      "field_id": 3,
+      "field_name": "role",
+      "field_label": "Role",
+      "field_description": "Select your role",
+      "field_type": "select",
+      "field_options": "Developer\nDesigner\nMarketer\nOther",
+      "required": true,
+      "display_order": 3
+    },
+    {
+      "field_id": 4,
+      "field_name": "interests",
+      "field_label": "Interests",
+      "field_description": "Select all that apply",
+      "field_type": "checkbox",
+      "field_options": "Technology\nSports\nMusic\nTravel\nGaming",
+      "required": false,
+      "display_order": 4
+    },
+    {
+      "field_id": 5,
+      "field_name": "experience",
+      "field_label": "Experience Level",
+      "field_description": "How experienced are you?",
+      "field_type": "radio",
+      "field_options": "Beginner\nIntermediate\nAdvanced\nExpert",
+      "required": true,
+      "display_order": 5
+    }
+  ]
+}

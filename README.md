@@ -95,6 +95,21 @@ claude mcp add --scope project --transport stdio mybb \
 
 Restart Claude Code to load the MCP server. Verify with `claude mcp get mybb`.
 
+### Codex CLI Setup (MCP)
+
+Do **not** change existing Claude Code instructions.
+
+Register the MCP server with Codex:
+```bash
+codex mcp add mybb -- bash -lc 'cd /home/austin/projects/MyBB_Playground && exec mybb_mcp/.venv/bin/python -m mybb_mcp.server'
+
+# Verify
+codex mcp list
+codex mcp get mybb
+```
+
+Repo workflow + constraints: `AGENTS.md`.
+
 ### 4. Complete MyBB Web Setup
 
 Open http://localhost:8022/install/ and follow the MyBB installer:

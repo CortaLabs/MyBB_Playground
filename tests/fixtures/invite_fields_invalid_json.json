@@ -1,0 +1,17 @@
+{
+  "version": "1.0",
+  "export_timestamp": "2026-01-21T06:05:00Z",
+  "field_count": 1,
+  "fields": [
+    {
+      "field_id": 1,
+      "field_name": "test",
+      "field_label": "Test Field",
+      "field_description": "This JSON is malformed",
+      "field_type": "text",
+      "field_options": "",
+      "required": true,
+      "display_order": 1
+    }
+  ]
+  // Missing closing brace - malformed JSON

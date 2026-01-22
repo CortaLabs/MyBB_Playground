@@ -1,0 +1,37 @@
+{
+  "version": "1.0",
+  "export_timestamp": "2026-01-21T06:05:00Z",
+  "field_count": 3,
+  "fields": [
+    {
+      "field_id": 1,
+      "field_name": "unicode_test",
+      "field_label": "Unicode Test: 日本語 Español Français 中文",
+      "field_description": "Testing UTF-8: émojis 🎉 symbols © ® ™ quotes "smart" 'smart'",
+      "field_type": "text",
+      "field_options": "",
+      "required": true,
+      "display_order": 1
+    },
+    {
+      "field_id": 2,
+      "field_name": "special_chars",
+      "field_label": "Special <>&\"' Characters",
+      "field_description": "Testing XSS prevention: <script>alert('test')</script>",
+      "field_type": "textarea",
+      "field_options": "",
+      "required": false,
+      "display_order": 2
+    },
+    {
+      "field_id": 3,
+      "field_name": "select_unicode",
+      "field_label": "Language Selection",
+      "field_description": "Select your language",
+      "field_type": "select",
+      "field_options": "English\n日本語 (Japanese)\nEspañol (Spanish)\nFrançais (French)\n中文 (Chinese)",
+      "required": false,
+      "display_order": 3
+    }
+  ]
+}

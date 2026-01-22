@@ -721,10 +721,14 @@ function {codename}_load_templates_from_disk() {{
         # Activation code
         activate_code = "    // Nothing to activate"
         if has_templates:
-            activate_code = f'''    // Templates are loaded during installation'''
+            activate_code = f'''    // Load templates from disk
+    {codename}_load_templates_from_disk();'''
 
         # Deactivation code
         deactivate_code = "    // Nothing to deactivate"
+        if has_templates:
+            deactivate_code = f'''    // Remove plugin templates
+    $db->delete_query('templates', "title LIKE '{codename}%'");'''
 
         # Install code
         install_parts = []
@@ -767,16 +771,10 @@ function {codename}_load_templates_from_disk() {{
         ) ENGINE=MyISAM{{$collation}};");
     }}''')
 
-        # Add template loading if has_templates
-        if has_templates:
-            install_parts.append(f"    // Load templates from disk\n    {codename}_load_templates_from_disk();")
-
         install_code = "\n".join(install_parts) if install_parts else "    // Nothing to install"
 
         # Uninstall code
         uninstall_parts = []
-        if has_templates:
-            uninstall_parts.append(f"    $db->delete_query('templates', \"title LIKE '{codename}%'\");")
         if has_settings:
             uninstall_parts.append(f"    $db->delete_query('settinggroups', \"name='{codename}'\");")
             uninstall_parts.append(f"    $db->delete_query('settings', \"name LIKE '{codename}%'\");")

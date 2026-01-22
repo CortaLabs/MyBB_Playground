@@ -1,0 +1,26 @@
+{
+  "version": "1.0",
+  "export_timestamp": "2026-01-21T06:05:00Z",
+  "field_count": 2,
+  "fields": [
+    {
+      "field_id": 1,
+      "field_name": "valid_field",
+      "field_label": "Valid Field",
+      "field_description": "This field is valid",
+      "field_type": "text",
+      "field_options": "",
+      "required": true,
+      "display_order": 1
+    },
+    {
+      "field_id": 2,
+      "field_name": "missing_label",
+      "field_description": "This field is missing the required field_label",
+      "field_type": "text",
+      "field_options": "",
+      "required": false,
+      "display_order": 2
+    }
+  ]
+}

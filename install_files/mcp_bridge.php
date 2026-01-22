@@ -14,11 +14,18 @@
  *   plugin:list      - List all plugins with status
  *   cache:read       - Read a cache entry
  *   cache:rebuild    - Rebuild cache
+ *   cache:rebuild_smilies - Rebuild smilies cache
  *   info             - Get MyBB installation info
  *
  * @author MCP Bridge
  * @version 1.0.0
  */
+
+// ============================================================================
+// Bridge/Protocol Versioning
+// ============================================================================
+define('MCP_BRIDGE_VERSION', '1.2.0');
+define('MCP_BRIDGE_PROTOCOL_VERSION', '1');
 
 // ============================================================================
 // Security: CLI only
@@ -38,6 +45,70 @@ $options = getopt('', [
     'force',
     'json',
     'cache:',
+    'title:',
+    'template:',
+    'sid:',
+    'templates_json:',
+    'find:',
+    'replace:',
+    'template_sets:',
+    'regex:',
+    'limit:',
+    'stylesheet:',
+    'request_id:',
+    'name:',
+    'description:',
+    'type:',
+    'pid:',
+    'parentlist:',
+    'disporder:',
+    'active:',
+    'open:',
+    'linkto:',
+    'showinjump:',
+    'usepostcounts:',
+    'usethreadcounts:',
+    'allowhtml:',
+    'allowmycode:',
+    'allowsmilies:',
+    'allowimgcode:',
+    'allowvideocode:',
+    'allowpicons:',
+    'allowtratings:',
+    'rulestype:',
+    'rulestitle:',
+    'rules:',
+    'fid:',
+    'tid:',
+    'pid:',
+    'replyto:',
+    'uid:',
+    'usergroup:',
+    'additionalgroups:',
+    'gid:',
+    'admin:',
+    'bantime:',
+    'reason:',
+    'dateline:',
+    'username:',
+    'subject:',
+    'message:',
+    'closed:',
+    'sticky:',
+    'approve:',
+    'visible:',
+    'new_fid:',
+    'edituid:',
+    'edit_uid:',
+    'editreason:',
+    'signature:',
+    'disablesmilies:',
+    'logaction:',
+    'ipaddress:',
+    'data:',
+    'restore',
+    'delete',
+    'soft',
     'help'
 ]);
 
@@ -67,10 +138,106 @@ Actions:
 
   cache:rebuild     Rebuild settings cache
 
+  cache:rebuild_smilies  Rebuild smilies cache
+
+  template:write    Write or create a template (MyBB-native)
+                    --title=<name> --template=<html> [--sid=<sid>]
+
+  template:find_replace  Find/replace across templates (MyBB-native)
+                    --title=<name> --find=<pattern> --replace=<text>
+                    [--template_sets=<csv>] [--regex=0|1] [--limit=<int>]
+
+  template:batch_write   Batch write templates (MyBB-native)
+                    --sid=<sid> --templates_json=<json>
+
+  stylesheet:write  Write stylesheet CSS (MyBB-native)
+                    --sid=<sid> --stylesheet=<css>
+
+  forum:create      Create a forum or category (MyBB-native)
+                    --name=<text> [--type=f|c] [--pid=<parent_fid>]
+                    [--description=<text>] [--disporder=<int>]
+
+  forum:update      Update a forum or category (MyBB-native)
+                    --fid=<forum_id>
+                    [--name=<text>] [--description=<text>] [--type=f|c] [--pid=<parent_fid>]
+                    [--disporder=<int>] [--active=0|1] [--open=0|1]
+
+  user:update_group Update a user's primary group (MyBB-native)
+                    --uid=<user_id> --usergroup=<gid>
+                    [--additionalgroups=<csv_gids>]
+
+  user:ban          Ban a user (MyBB-native)
+                    --uid=<user_id> --gid=<banned_gid> --admin=<admin_uid>
+                    [--dateline=<unix>] [--bantime=<spec>] [--reason=<text>]
+
+  user:unban        Unban a user (MyBB-native)
+                    --uid=<user_id>
+
+  mod:close_thread  Close or open a thread (MyBB-native)
+                    --tid=<thread_id> [--closed=0|1]
+
+  mod:stick_thread  Stick or unstick a thread (MyBB-native)
+                    --tid=<thread_id> [--sticky=0|1]
+
+  mod:approve_thread Approve or unapprove a thread (MyBB-native)
+                    --tid=<thread_id> [--approve=0|1]
+
+  mod:approve_post  Approve or unapprove a post (MyBB-native)
+                    --pid=<post_id> [--approve=0|1]
+
+  mod:soft_delete_thread Soft delete a thread (MyBB-native)
+                    --tid=<thread_id>
+
+  mod:restore_thread Restore a soft-deleted thread (MyBB-native)
+                    --tid=<thread_id>
+
+  mod:soft_delete_post Soft delete a post (MyBB-native)
+                    --pid=<post_id>
+
+  mod:restore_post  Restore a soft-deleted post (MyBB-native)
+                    --pid=<post_id>
+
+  modlog:add        Add a moderator log entry (MyBB-native)
+                    --uid=<mod_uid> --logaction=<text>
+                    [--fid=<forum_id>] [--tid=<thread_id>] [--pid=<post_id>]
+                    [--data=<extra>] [--ipaddress=<ip>]
+
+  thread:create     Create a new thread (MyBB-native)
+                    --fid=<forum_id> --subject=<text> --message=<text>
+                    [--uid=<uid>] [--username=<name>]
+
+  thread:edit       Edit a thread (MyBB-native)
+                    --tid=<thread_id>
+                    [--subject=<text>] [--closed=0|1] [--sticky=0|1] [--visible=1|0|-1]
+
+  thread:delete     Delete a thread (MyBB-native)
+                    --tid=<thread_id>
+                    [--soft] (soft delete; default if provided)
+
+  thread:move       Move a thread (MyBB-native)
+                    --tid=<thread_id> --new_fid=<forum_id>
+
+  post:create       Create a new post reply (MyBB-native)
+                    --tid=<thread_id> --message=<text>
+                    [--subject=<text>] [--replyto=<pid>]
+                    [--uid=<uid>] [--username=<name>]
+
+  post:edit         Edit a post (MyBB-native)
+                    --pid=<post_id>
+                    [--subject=<text>] [--message=<text>]
+                    [--edituid=<uid>] [--edit_uid=<uid>] [--editreason=<text>]
+                    [--signature=0|1] [--disablesmilies=0|1]
+
+  post:delete       Delete a post (MyBB-native)
+                    --pid=<post_id>
+                    [--soft] (soft delete; default if provided)
+                    [--restore] (restore soft-deleted post)
+
   info              Get MyBB installation info
 
 Options:
   --json            Output as JSON (recommended for programmatic use)
+  --request_id      Correlation id echoed back in JSON
   --help            Show this help message
 
 Examples:
@@ -86,18 +253,26 @@ HELP;
 
 $action = $options['action'] ?? '';
 $outputJson = isset($options['json']);
+$requestId = $options['request_id'] ?? null;
 
 // ============================================================================
 // Response helper
 // ============================================================================
 function respond($success, $data = [], $error = null) {
-    global $outputJson;
+    global $outputJson, $action, $requestId;
 
     $response = [
         'success' => $success,
         'timestamp' => date('c'),
-        'data' => $data
+        'data' => $data,
+        'action' => $action,
+        'bridge_version' => MCP_BRIDGE_VERSION,
+        'protocol_version' => MCP_BRIDGE_PROTOCOL_VERSION,
     ];
+
+    if ($requestId !== null && $requestId !== '') {
+        $response['request_id'] = (string) $requestId;
+    }
 
     if ($error !== null) {
         $response['error'] = $error;
@@ -118,6 +293,89 @@ function respond($success, $data = [], $error = null) {
     }
 
     exit($success ? 0 : 1);
+}
+
+// ========================================================================
+// Template helper
+// ========================================================================
+function mcp_upsert_template($title, $template, $sid)
+{
+    global $db, $mybb;
+
+    $template_array = array(
+        'title' => $db->escape_string($title),
+        'sid' => (int)$sid,
+        'template' => $db->escape_string(rtrim($template)),
+        'version' => $mybb->version_code,
+        'status' => '',
+        'dateline' => TIME_NOW
+    );
+
+    $existing_tid = 0;
+    $created = false;
+    $sid = (int)$sid;
+
+    if ($sid === -2 || $sid === -1) {
+        $query = $db->simple_select(
+            "templates",
+            "tid",
+            "title='".$db->escape_string($title)."' AND sid='{$sid}'",
+            array('limit' => 1)
+        );
+        $existing_tid = (int)$db->fetch_field($query, "tid");
+        if ($existing_tid > 0) {
+            $db->update_query("templates", $template_array, "tid='{$existing_tid}'");
+        } else {
+            $existing_tid = (int)$db->insert_query("templates", $template_array);
+            $created = true;
+        }
+    } else {
+        $query = $db->simple_select(
+            "templates",
+            "tid",
+            "title='".$db->escape_string($title)."' AND sid='{$sid}'",
+            array('limit' => 1)
+        );
+        $existing_tid = (int)$db->fetch_field($query, "tid");
+        if ($existing_tid > 0) {
+            $db->update_query("templates", $template_array, "tid='{$existing_tid}'");
+        } else {
+            $existing_tid = (int)$db->insert_query("templates", $template_array);
+            $created = true;
+        }
+    }
+
+    return array(
+        'tid' => $existing_tid,
+        'created' => $created
+    );
+}
+
+// ========================================================================
+// Moderator log helper
+// ========================================================================
+function ensure_mod_context($uid) {
+    global $mybb, $session;
+
+    if (!isset($mybb->user) || !is_array($mybb->user)) {
+        $mybb->user = [];
+    }
+    $mybb->user['uid'] = (int)$uid;
+
+    if (!isset($session) || !is_object($session)) {
+        $session = new stdClass();
+    }
+    if (!isset($session->packedip)) {
+        $session->packedip = my_inet_pton('127.0.0.1');
+    }
+}
+
+function log_mod_action($action, $data, $uid) {
+    if ($uid <= 0) {
+        $uid = 1;
+    }
+    ensure_mod_context($uid);
+    log_moderator_action($data, $action);
 }
 
 // ============================================================================
@@ -462,11 +720,1242 @@ switch ($action) {
         ]);
         break;
 
+    case 'cache:rebuild_smilies':
+        $cache->update_smilies();
+        respond(true, [
+            'message' => 'Smilies cache rebuilt'
+        ]);
+        break;
+
+    // ========================================================================
+    // Template Actions (MyBB-native)
+    // ========================================================================
+    case 'template:write':
+        require_once MYBB_ROOT . "admin/inc/functions.php";
+
+        $title = $options['title'] ?? '';
+        $template = $options['template'] ?? null;
+        $sid = isset($options['sid']) ? (int)$options['sid'] : 1;
+
+        if ($title === '' || $template === null) {
+            respond(false, [], "Required: --title and --template");
+        }
+
+        if (check_template($template)) {
+            respond(false, [], "Template failed security check");
+        }
+
+        $result = mcp_upsert_template($title, $template, $sid);
+        $action_taken = $result['created'] ? "template_created" : "template_updated";
+
+        log_admin_action($result['tid'], $title, $sid);
+
+        respond(true, [
+            "tid" => $result['tid'],
+            "sid" => $sid,
+            "title" => $title,
+            "actions_taken" => [$action_taken]
+        ]);
+        break;
+
+    case 'template:find_replace':
+        require_once MYBB_ROOT . "inc/adminfunctions_templates.php";
+
+        $title = $options['title'] ?? '';
+        $find = $options['find'] ?? null;
+        $replace = $options['replace'] ?? null;
+
+        if ($title === '' || $find === null || $replace === null) {
+            respond(false, [], "Required: --title, --find, --replace");
+        }
+
+        $use_regex = isset($options['regex']) ? (int)$options['regex'] : 1;
+        $pattern = $use_regex ? $find : '#'.preg_quote($find, '#').'#';
+        $limit = isset($options['limit']) ? (int)$options['limit'] : -1;
+
+        $updated = false;
+        if (!empty($options['template_sets'])) {
+            $set_list = array_filter(array_map('trim', explode(',', $options['template_sets'])));
+            foreach ($set_list as $set) {
+                $sid = (int)$set;
+                if ($sid === 0) {
+                    continue;
+                }
+                if (find_replace_templatesets($title, $pattern, $replace, 1, $sid, $limit)) {
+                    $updated = true;
+                }
+            }
+        } else {
+            $updated = find_replace_templatesets($title, $pattern, $replace, 1, false, $limit) ? true : false;
+        }
+
+        respond(true, [
+            "title" => $title,
+            "updated" => $updated,
+            "actions_taken" => $updated ? ["templates_updated"] : []
+        ]);
+        break;
+
+    case 'template:batch_write':
+        require_once MYBB_ROOT . "admin/inc/functions.php";
+
+        $sid = isset($options['sid']) ? (int)$options['sid'] : 1;
+        $templates_json = $options['templates_json'] ?? '';
+        $templates = json_decode($templates_json, true);
+
+        if (!is_array($templates)) {
+            respond(false, [], "Required: --templates_json (array of {title, template})");
+        }
+
+        $created = 0;
+        $updated = 0;
+
+        foreach ($templates as $item) {
+            $title = $item['title'] ?? '';
+            $template = $item['template'] ?? null;
+            if ($title === '' || $template === null) {
+                respond(false, [], "Each template must include title and template");
+            }
+            if (check_template($template)) {
+                respond(false, ["title" => $title], "Template failed security check");
+            }
+        }
+
+        foreach ($templates as $item) {
+            $title = $item['title'];
+            $template = $item['template'];
+            $result = mcp_upsert_template($title, $template, $sid);
+            if ($result['created']) {
+                $created++;
+            } else {
+                $updated++;
+            }
+        }
+
+        respond(true, [
+            "sid" => $sid,
+            "created" => $created,
+            "updated" => $updated,
+            "actions_taken" => ["templates_batch_written"]
+        ]);
+        break;
+
+    // ========================================================================
+    // Stylesheet Actions (MyBB-native)
+    // ========================================================================
+    case 'stylesheet:write':
+        require_once MYBB_ROOT . "admin/inc/functions_themes.php";
+        require_once MYBB_ROOT . "admin/inc/functions.php";
+
+        $sid = isset($options['sid']) ? (int)$options['sid'] : 0;
+        $css = $options['stylesheet'] ?? null;
+
+        if ($sid <= 0 || $css === null) {
+            respond(false, [], "Required: --sid and --stylesheet");
+        }
+
+        $query = $db->simple_select("themestylesheets", "*", "sid='{$sid}'", array('limit' => 1));
+        $stylesheet = $db->fetch_array($query);
+        if (!$stylesheet) {
+            respond(false, ["sid" => $sid], "Stylesheet not found");
+        }
+
+        $db->update_query("themestylesheets", array(
+            "stylesheet" => $db->escape_string($css),
+            "lastmodified" => TIME_NOW
+        ), "sid='{$sid}'");
+
+        $tid = (int)$stylesheet['tid'];
+        $theme = get_theme($tid);
+        if (!$theme) {
+            $theme = $db->fetch_array($db->simple_select("themes", "name, tid", "tid='{$tid}'", array('limit' => 1)));
+        }
+
+        $cache_ok = cache_stylesheet($tid, $stylesheet['name'], $css);
+        if (!$cache_ok) {
+            $db->update_query("themestylesheets", array('cachefile' => "css.php?stylesheet={$sid}"), "sid='{$sid}'", 1);
+        }
+
+        update_theme_stylesheet_list($tid, $theme ?: false, true);
+
+        log_admin_action($sid, $stylesheet['name'], $stylesheet['tid'], $theme ? $theme['name'] : null);
+
+        respond(true, [
+            "sid" => $sid,
+            "tid" => (int)$stylesheet['tid'],
+            "name" => $stylesheet['name'],
+            "cache_updated" => $cache_ok,
+            "actions_taken" => ["stylesheet_updated", "stylesheet_cache_refreshed"]
+        ]);
+        break;
+
+    // ========================================================================
+    // Forum Actions (MyBB-native)
+    // ========================================================================
+    case 'forum:create':
+        $name = $options['name'] ?? '';
+        if ($name === '') {
+            respond(false, [], "Required: --name");
+        }
+
+        $type = $options['type'] ?? 'f';
+        $pid = isset($options['pid']) ? (int)$options['pid'] : 0;
+        if ($pid < 0) {
+            $pid = 0;
+        }
+
+        $disporder = isset($options['disporder']) ? (int)$options['disporder'] : 1;
+        $active = isset($options['active']) ? (int)$options['active'] : 1;
+        $open = isset($options['open']) ? (int)$options['open'] : 1;
+
+        $insert_array = [
+            "name" => $db->escape_string($name),
+            "description" => $db->escape_string($options['description'] ?? ''),
+            "linkto" => $db->escape_string($options['linkto'] ?? ''),
+            "type" => $db->escape_string($type),
+            "pid" => $pid,
+            "parentlist" => '',
+            "disporder" => $disporder,
+            "active" => $active,
+            "open" => $open,
+            "allowhtml" => isset($options['allowhtml']) ? (int)$options['allowhtml'] : 0,
+            "allowmycode" => isset($options['allowmycode']) ? (int)$options['allowmycode'] : 1,
+            "allowsmilies" => isset($options['allowsmilies']) ? (int)$options['allowsmilies'] : 1,
+            "allowimgcode" => isset($options['allowimgcode']) ? (int)$options['allowimgcode'] : 1,
+            "allowvideocode" => isset($options['allowvideocode']) ? (int)$options['allowvideocode'] : 1,
+            "allowpicons" => isset($options['allowpicons']) ? (int)$options['allowpicons'] : 1,
+            "allowtratings" => isset($options['allowtratings']) ? (int)$options['allowtratings'] : 1,
+            "usepostcounts" => isset($options['usepostcounts']) ? (int)$options['usepostcounts'] : 1,
+            "usethreadcounts" => isset($options['usethreadcounts']) ? (int)$options['usethreadcounts'] : 1,
+            "showinjump" => isset($options['showinjump']) ? (int)$options['showinjump'] : 1,
+            "rulestype" => isset($options['rulestype']) ? (int)$options['rulestype'] : 0,
+            "rulestitle" => $db->escape_string($options['rulestitle'] ?? ''),
+            "rules" => $db->escape_string($options['rules'] ?? ''),
+        ];
+
+        $fid = $db->insert_query("forums", $insert_array);
+
+        require_once MYBB_ROOT . "admin/inc/functions.php";
+        $parentlist = make_parent_list($fid);
+        $db->update_query("forums", ["parentlist" => $parentlist], "fid='{$fid}'");
+
+        $cache->update_forums();
+        $cache->update_forumsdisplay();
+
+        respond(true, [
+            "fid" => (int)$fid,
+            "parentlist" => $parentlist,
+            "actions_taken" => ["forum_created", "forums_cache_updated"]
+        ]);
+        break;
+
+    case 'forum:update':
+        $fid = isset($options['fid']) ? (int)$options['fid'] : 0;
+        if ($fid <= 0) {
+            respond(false, [], "Required: --fid");
+        }
+
+        $forum = get_forum($fid);
+        if (!$forum) {
+            respond(false, ["fid" => $fid], "Forum not found");
+        }
+
+        $update_array = [];
+        if (isset($options['name'])) {
+            $update_array["name"] = $db->escape_string($options['name']);
+        }
+        if (isset($options['description'])) {
+            $update_array["description"] = $db->escape_string($options['description']);
+        }
+        if (isset($options['linkto'])) {
+            $update_array["linkto"] = $db->escape_string($options['linkto']);
+        }
+        if (isset($options['type'])) {
+            $update_array["type"] = $db->escape_string($options['type']);
+        }
+        if (isset($options['pid'])) {
+            $update_array["pid"] = (int)$options['pid'];
+        }
+        if (isset($options['disporder'])) {
+            $update_array["disporder"] = (int)$options['disporder'];
+        }
+        if (isset($options['active'])) {
+            $update_array["active"] = (int)$options['active'];
+        }
+        if (isset($options['open'])) {
+            $update_array["open"] = (int)$options['open'];
+        }
+        if (isset($options['rulestype'])) {
+            $update_array["rulestype"] = (int)$options['rulestype'];
+        }
+        if (isset($options['rulestitle'])) {
+            $update_array["rulestitle"] = $db->escape_string($options['rulestitle']);
+        }
+        if (isset($options['rules'])) {
+            $update_array["rules"] = $db->escape_string($options['rules']);
+        }
+        if (isset($options['showinjump'])) {
+            $update_array["showinjump"] = (int)$options['showinjump'];
+        }
+        if (isset($options['usepostcounts'])) {
+            $update_array["usepostcounts"] = (int)$options['usepostcounts'];
+        }
+        if (isset($options['usethreadcounts'])) {
+            $update_array["usethreadcounts"] = (int)$options['usethreadcounts'];
+        }
+        if (isset($options['allowhtml'])) {
+            $update_array["allowhtml"] = (int)$options['allowhtml'];
+        }
+        if (isset($options['allowmycode'])) {
+            $update_array["allowmycode"] = (int)$options['allowmycode'];
+        }
+        if (isset($options['allowsmilies'])) {
+            $update_array["allowsmilies"] = (int)$options['allowsmilies'];
+        }
+        if (isset($options['allowimgcode'])) {
+            $update_array["allowimgcode"] = (int)$options['allowimgcode'];
+        }
+        if (isset($options['allowvideocode'])) {
+            $update_array["allowvideocode"] = (int)$options['allowvideocode'];
+        }
+        if (isset($options['allowpicons'])) {
+            $update_array["allowpicons"] = (int)$options['allowpicons'];
+        }
+        if (isset($options['allowtratings'])) {
+            $update_array["allowtratings"] = (int)$options['allowtratings'];
+        }
+
+        if (empty($update_array)) {
+            respond(false, [], "No update fields provided");
+        }
+
+        $db->update_query("forums", $update_array, "fid='{$fid}'");
+
+        if (isset($update_array["pid"]) && $update_array["pid"] != $forum['pid']) {
+            require_once MYBB_ROOT . "admin/inc/functions.php";
+            $db->update_query("forums", ["parentlist" => make_parent_list($fid)], "fid='{$fid}'");
+
+            switch ($db->type) {
+                case "sqlite":
+                case "pgsql":
+                    $query = $db->simple_select("forums", "fid", "','||parentlist||',' LIKE '%,$fid,%'");
+                    break;
+                default:
+                    $query = $db->simple_select("forums", "fid", "CONCAT(',',parentlist,',') LIKE '%,$fid,%'");
+            }
+            while ($child = $db->fetch_array($query)) {
+                $db->update_query("forums", ["parentlist" => make_parent_list($child['fid'])], "fid='{$child['fid']}'");
+            }
+        }
+
+        $cache->update_forums();
+        $cache->update_forumsdisplay();
+
+        respond(true, [
+            "fid" => $fid,
+            "actions_taken" => ["forum_updated", "forums_cache_updated"]
+        ]);
+        break;
+
+    case 'forum:delete':
+        $fid = isset($options['fid']) ? (int)$options['fid'] : 0;
+        if ($fid <= 0) {
+            respond(false, [], "Required: --fid");
+        }
+
+        // Validate forum exists
+        $forum = get_forum($fid);
+        if (!$forum) {
+            respond(false, ["fid" => $fid], "Forum not found");
+        }
+
+        // Check if forum has content (safety check)
+        if ($forum['threads'] > 0 || $forum['posts'] > 0) {
+            respond(false, [
+                "fid" => $fid,
+                "threads" => (int)$forum['threads'],
+                "posts" => (int)$forum['posts']
+            ], "Forum has content - cannot delete. Move or delete content first.");
+        }
+
+        // Build query for child forums
+        $delquery = "";
+        switch ($db->type) {
+            case "pgsql":
+            case "sqlite":
+                $query = $db->simple_select("forums", "fid", "','||parentlist||',' LIKE '%,$fid,%'");
+                break;
+            default:
+                $query = $db->simple_select("forums", "fid", "CONCAT(',',parentlist,',') LIKE '%,$fid,%'");
+        }
+        while ($child = $db->fetch_array($query)) {
+            $delquery .= " OR fid='{$child['fid']}'";
+        }
+
+        // Delete the forum
+        $db->delete_query("forums", "fid='$fid'");
+
+        // Delete subforums
+        if ($delquery) {
+            switch ($db->type) {
+                case "pgsql":
+                case "sqlite":
+                    $db->delete_query("forums", "','||parentlist||',' LIKE '%,$fid,%'");
+                    break;
+                default:
+                    $db->delete_query("forums", "CONCAT(',',parentlist,',') LIKE '%,$fid,%'");
+            }
+        }
+
+        // Cleanup related tables
+        $db->delete_query('moderators', "fid='{$fid}' {$delquery}");
+        $db->delete_query('forumsubscriptions', "fid='{$fid}' {$delquery}");
+        $db->delete_query('forumpermissions', "fid='{$fid}' {$delquery}");
+        $db->delete_query('announcements', "fid='{$fid}' {$delquery}");
+        $db->delete_query('forumsread', "fid='{$fid}' {$delquery}");
+
+        // Rebuild caches
+        $cache->update_forums();
+        $cache->update_moderators();
+        $cache->update_forumpermissions();
+        $cache->update_forumsdisplay();
+
+        respond(true, [
+            "fid" => $fid,
+            "actions_taken" => [
+                "forum_deleted",
+                "subforums_deleted",
+                "related_records_cleaned",
+                "forums_cache_updated",
+                "moderators_cache_updated",
+                "permissions_cache_updated",
+                "forumsdisplay_cache_updated"
+            ]
+        ]);
+        break;
+
+    // ========================================================================
+    // User Actions (MyBB-native)
+    // ========================================================================
+    case 'user:update_group':
+        $uid = isset($options['uid']) ? (int)$options['uid'] : 0;
+        $usergroup = isset($options['usergroup']) ? (int)$options['usergroup'] : 0;
+
+        if ($uid <= 0 || $usergroup <= 0) {
+            respond(false, [], "Required: --uid and --usergroup");
+        }
+
+        require_once MYBB_ROOT . "inc/datahandlers/user.php";
+        $userhandler = new UserDataHandler('update');
+
+        $update_data = [
+            "uid" => $uid,
+            "usergroup" => $usergroup,
+        ];
+
+        if (isset($options['additionalgroups'])) {
+            $update_data["additionalgroups"] = (string)$options['additionalgroups'];
+        }
+
+        $userhandler->set_data($update_data);
+
+        if (!$userhandler->validate_user()) {
+            $errors = $userhandler->get_friendly_errors();
+            respond(false, ["errors" => $errors], "User validation failed");
+        }
+
+        $success = $userhandler->update_user();
+        if (!$success) {
+            respond(false, [], "User update failed");
+        }
+
+        respond(true, [
+            "uid" => $uid,
+            "actions_taken" => ["usergroup_updated"]
+        ]);
+        break;
+
+    case 'user:ban':
+        $uid = isset($options['uid']) ? (int)$options['uid'] : 0;
+        $gid = isset($options['gid']) ? (int)$options['gid'] : 0;
+        $admin = isset($options['admin']) ? (int)$options['admin'] : 0;
+        $dateline = isset($options['dateline']) ? (int)$options['dateline'] : TIME_NOW;
+        $bantime = $options['bantime'] ?? '---';
+        $reason = $options['reason'] ?? '';
+
+        if ($uid <= 0 || $gid <= 0 || $admin <= 0) {
+            respond(false, [], "Required: --uid, --gid, --admin");
+        }
+
+        $user = get_user($uid);
+        if (!$user) {
+            respond(false, ["uid" => $uid], "User not found");
+        }
+
+        if (is_super_admin($uid) && !is_super_admin($admin)) {
+            respond(false, ["uid" => $uid], "Cannot ban a super admin");
+        }
+
+        if ($uid === $admin) {
+            respond(false, ["uid" => $uid], "Cannot ban self");
+        }
+
+        $query = $db->simple_select("banned", "uid", "uid='{$uid}'");
+        if ($db->fetch_field($query, "uid")) {
+            respond(false, ["uid" => $uid], "User already banned");
+        }
+
+        $usergroups = $cache->read("usergroups");
+        if (!empty($usergroups[$user['usergroup']]) && $usergroups[$user['usergroup']]['isbannedgroup'] == 1) {
+            respond(false, ["uid" => $uid], "User already in a banned group");
+        }
+
+        if ($bantime === '---') {
+            $lifted = 0;
+        } else {
+            $lifted = ban_date2timestamp($bantime, $dateline);
+        }
+
+        $reason = my_substr($reason, 0, 255);
+
+        $insert_array = [
+            'uid' => $uid,
+            'gid' => $gid,
+            'oldgroup' => $user['usergroup'],
+            'oldadditionalgroups' => $db->escape_string($user['additionalgroups']),
+            'olddisplaygroup' => $user['displaygroup'],
+            'admin' => $admin,
+            'dateline' => $dateline,
+            'bantime' => $db->escape_string($bantime),
+            'lifted' => $db->escape_string($lifted),
+            'reason' => $db->escape_string($reason),
+        ];
+
+        $db->insert_query('banned', $insert_array);
+
+        $update_array = [
+            'usergroup' => $gid,
+            'displaygroup' => 0,
+            'additionalgroups' => '',
+        ];
+
+        $db->delete_query("forumsubscriptions", "uid='{$uid}'");
+        $db->delete_query("threadsubscriptions", "uid='{$uid}'");
+        $db->update_query('users', $update_array, "uid='{$uid}'");
+        $cache->update_moderators();
+
+        respond(true, [
+            "uid" => $uid,
+            "actions_taken" => ["user_banned", "moderators_cache_updated"],
+            "ban" => [
+                "gid" => $gid,
+                "lifted" => $lifted,
+            ],
+        ]);
+        break;
+
+    case 'user:unban':
+        $uid = isset($options['uid']) ? (int)$options['uid'] : 0;
+        if ($uid <= 0) {
+            respond(false, [], "Required: --uid");
+        }
+
+        $query = $db->simple_select("banned", "*", "uid='{$uid}'");
+        $ban = $db->fetch_array($query);
+        if (!$ban) {
+            respond(false, ["uid" => $uid], "User is not banned");
+        }
+
+        $updated_group = [
+            'usergroup' => $ban['oldgroup'],
+            'additionalgroups' => $db->escape_string($ban['oldadditionalgroups']),
+            'displaygroup' => $ban['olddisplaygroup'],
+        ];
+
+        $db->delete_query("banned", "uid='{$uid}'");
+        $db->update_query("users", $updated_group, "uid='{$uid}'");
+        $cache->update_moderators();
+
+        respond(true, [
+            "uid" => $uid,
+            "actions_taken" => ["user_unbanned", "moderators_cache_updated"]
+        ]);
+        break;
+
+    // ========================================================================
+    // Moderation Actions (MyBB-native)
+    // ========================================================================
+    case 'mod:close_thread':
+        $tid = isset($options['tid']) ? (int)$options['tid'] : 0;
+        $closed = isset($options['closed']) ? (int)$options['closed'] : 1;
+        $mod_uid = isset($options['uid']) ? (int)$options['uid'] : 1;
+
+        if ($tid <= 0) {
+            respond(false, [], "Required: --tid");
+        }
+
+        require_once MYBB_ROOT . "inc/class_moderation.php";
+        $moderation = new Moderation();
+        $success = $closed ? $moderation->close_threads($tid) : $moderation->open_threads($tid);
+
+        if (!$success) {
+            respond(false, ["tid" => $tid], "Failed to update thread status");
+        }
+
+        $thread = get_thread($tid);
+        $log_data = [
+            "tid" => $tid,
+            "fid" => $thread['fid'] ?? 0,
+            "subject" => $thread['subject'] ?? '',
+        ];
+        log_mod_action($closed ? "Thread closed" : "Thread opened", $log_data, $mod_uid);
+
+        respond(true, [
+            "tid" => $tid,
+            "actions_taken" => [$closed ? "thread_closed" : "thread_opened"]
+        ]);
+        break;
+
+    case 'mod:stick_thread':
+        $tid = isset($options['tid']) ? (int)$options['tid'] : 0;
+        $sticky = isset($options['sticky']) ? (int)$options['sticky'] : 1;
+        $mod_uid = isset($options['uid']) ? (int)$options['uid'] : 1;
+
+        if ($tid <= 0) {
+            respond(false, [], "Required: --tid");
+        }
+
+        require_once MYBB_ROOT . "inc/class_moderation.php";
+        $moderation = new Moderation();
+        $success = $sticky ? $moderation->stick_threads($tid) : $moderation->unstick_threads($tid);
+
+        if (!$success) {
+            respond(false, ["tid" => $tid], "Failed to update thread sticky state");
+        }
+
+        $thread = get_thread($tid);
+        $log_data = [
+            "tid" => $tid,
+            "fid" => $thread['fid'] ?? 0,
+            "subject" => $thread['subject'] ?? '',
+        ];
+        log_mod_action($sticky ? "Thread stuck" : "Thread unstuck", $log_data, $mod_uid);
+
+        respond(true, [
+            "tid" => $tid,
+            "actions_taken" => [$sticky ? "thread_stuck" : "thread_unstuck"]
+        ]);
+        break;
+
+    case 'mod:approve_thread':
+        $tid = isset($options['tid']) ? (int)$options['tid'] : 0;
+        $approve = isset($options['approve']) ? (int)$options['approve'] : 1;
+        $mod_uid = isset($options['uid']) ? (int)$options['uid'] : 1;
+
+        if ($tid <= 0) {
+            respond(false, [], "Required: --tid");
+        }
+
+        require_once MYBB_ROOT . "inc/class_moderation.php";
+        $moderation = new Moderation();
+        $success = $approve ? $moderation->approve_threads($tid) : $moderation->unapprove_threads($tid);
+
+        if (!$success) {
+            respond(false, ["tid" => $tid], "Failed to update thread approval state");
+        }
+
+        $thread = get_thread($tid);
+        $log_data = [
+            "tid" => $tid,
+            "fid" => $thread['fid'] ?? 0,
+            "subject" => $thread['subject'] ?? '',
+        ];
+        log_mod_action($approve ? "Thread approved" : "Thread unapproved", $log_data, $mod_uid);
+
+        respond(true, [
+            "tid" => $tid,
+            "actions_taken" => [$approve ? "thread_approved" : "thread_unapproved"]
+        ]);
+        break;
+
+    case 'mod:approve_post':
+        $pid = isset($options['pid']) ? (int)$options['pid'] : 0;
+        $approve = isset($options['approve']) ? (int)$options['approve'] : 1;
+        $mod_uid = isset($options['uid']) ? (int)$options['uid'] : 1;
+
+        if ($pid <= 0) {
+            respond(false, [], "Required: --pid");
+        }
+
+        require_once MYBB_ROOT . "inc/class_moderation.php";
+        $moderation = new Moderation();
+        $success = $approve ? $moderation->approve_posts([$pid]) : $moderation->unapprove_posts([$pid]);
+
+        if (!$success) {
+            respond(false, ["pid" => $pid], "Failed to update post approval state");
+        }
+
+        $post = get_post($pid);
+        $log_data = [
+            "pid" => $pid,
+            "tid" => $post['tid'] ?? 0,
+            "fid" => $post['fid'] ?? 0,
+        ];
+        log_mod_action($approve ? "Post approved" : "Post unapproved", $log_data, $mod_uid);
+
+        respond(true, [
+            "pid" => $pid,
+            "actions_taken" => [$approve ? "post_approved" : "post_unapproved"]
+        ]);
+        break;
+
+    case 'mod:soft_delete_thread':
+        $tid = isset($options['tid']) ? (int)$options['tid'] : 0;
+        $mod_uid = isset($options['uid']) ? (int)$options['uid'] : 1;
+        if ($tid <= 0) {
+            respond(false, [], "Required: --tid");
+        }
+
+        require_once MYBB_ROOT . "inc/class_moderation.php";
+        $moderation = new Moderation();
+        $success = $moderation->soft_delete_threads($tid);
+
+        if (!$success) {
+            respond(false, ["tid" => $tid], "Failed to soft delete thread");
+        }
+
+        $thread = get_thread($tid);
+        $log_data = [
+            "tid" => $tid,
+            "fid" => $thread['fid'] ?? 0,
+            "subject" => $thread['subject'] ?? '',
+        ];
+        log_mod_action("Thread soft deleted", $log_data, $mod_uid);
+
+        respond(true, [
+            "tid" => $tid,
+            "actions_taken" => ["thread_soft_deleted"]
+        ]);
+        break;
+
+    case 'mod:restore_thread':
+        $tid = isset($options['tid']) ? (int)$options['tid'] : 0;
+        $mod_uid = isset($options['uid']) ? (int)$options['uid'] : 1;
+        if ($tid <= 0) {
+            respond(false, [], "Required: --tid");
+        }
+
+        require_once MYBB_ROOT . "inc/class_moderation.php";
+        $moderation = new Moderation();
+        $success = $moderation->restore_threads($tid);
+
+        if (!$success) {
+            respond(false, ["tid" => $tid], "Failed to restore thread");
+        }
+
+        $thread = get_thread($tid);
+        $log_data = [
+            "tid" => $tid,
+            "fid" => $thread['fid'] ?? 0,
+            "subject" => $thread['subject'] ?? '',
+        ];
+        log_mod_action("Thread restored", $log_data, $mod_uid);
+
+        respond(true, [
+            "tid" => $tid,
+            "actions_taken" => ["thread_restored"]
+        ]);
+        break;
+
+    case 'mod:soft_delete_post':
+        $pid = isset($options['pid']) ? (int)$options['pid'] : 0;
+        $mod_uid = isset($options['uid']) ? (int)$options['uid'] : 1;
+        if ($pid <= 0) {
+            respond(false, [], "Required: --pid");
+        }
+
+        require_once MYBB_ROOT . "inc/class_moderation.php";
+        $moderation = new Moderation();
+        $success = $moderation->soft_delete_posts([$pid]);
+
+        if (!$success) {
+            respond(false, ["pid" => $pid], "Failed to soft delete post");
+        }
+
+        $post = get_post($pid);
+        $log_data = [
+            "pid" => $pid,
+            "tid" => $post['tid'] ?? 0,
+            "fid" => $post['fid'] ?? 0,
+        ];
+        log_mod_action("Post soft deleted", $log_data, $mod_uid);
+
+        respond(true, [
+            "pid" => $pid,
+            "actions_taken" => ["post_soft_deleted"]
+        ]);
+        break;
+
+    case 'mod:restore_post':
+        $pid = isset($options['pid']) ? (int)$options['pid'] : 0;
+        $mod_uid = isset($options['uid']) ? (int)$options['uid'] : 1;
+        if ($pid <= 0) {
+            respond(false, [], "Required: --pid");
+        }
+
+        require_once MYBB_ROOT . "inc/class_moderation.php";
+        $moderation = new Moderation();
+        $success = $moderation->restore_posts([$pid]);
+
+        if (!$success) {
+            respond(false, ["pid" => $pid], "Failed to restore post");
+        }
+
+        $post = get_post($pid);
+        $log_data = [
+            "pid" => $pid,
+            "tid" => $post['tid'] ?? 0,
+            "fid" => $post['fid'] ?? 0,
+        ];
+        log_mod_action("Post restored", $log_data, $mod_uid);
+
+        respond(true, [
+            "pid" => $pid,
+            "actions_taken" => ["post_restored"]
+        ]);
+        break;
+
+    case 'modlog:add':
+        $uid = isset($options['uid']) ? (int)$options['uid'] : 0;
+        $log_action = $options['logaction'] ?? '';
+        $fid = isset($options['fid']) ? (int)$options['fid'] : 0;
+        $tid = isset($options['tid']) ? (int)$options['tid'] : 0;
+        $pid = isset($options['pid']) ? (int)$options['pid'] : 0;
+        $data = $options['data'] ?? '';
+        $ipaddress = $options['ipaddress'] ?? '';
+
+        if ($uid <= 0 || $log_action === '') {
+            respond(false, [], "Required: --uid and --logaction");
+        }
+
+        if (!isset($mybb->user) || !is_array($mybb->user)) {
+            $mybb->user = [];
+        }
+        $mybb->user['uid'] = $uid;
+
+        if (!isset($session) || !is_object($session)) {
+            $session = new stdClass();
+        }
+        if ($ipaddress !== '') {
+            $session->packedip = my_inet_pton($ipaddress);
+        } elseif (!isset($session->packedip)) {
+            $session->packedip = my_inet_pton('127.0.0.1');
+        }
+
+        $payload = [];
+        if ($fid > 0) {
+            $payload['fid'] = $fid;
+        }
+        if ($tid > 0) {
+            $payload['tid'] = $tid;
+        }
+        if ($pid > 0) {
+            $payload['pid'] = $pid;
+        }
+        if ($data !== '') {
+            $payload['data'] = $data;
+        }
+
+        log_moderator_action($payload, $log_action);
+
+        respond(true, [
+            "uid" => $uid,
+            "actions_taken" => ["modlog_added"]
+        ]);
+        break;
+
+    // ========================================================================
+    // Content Actions (MyBB-native)
+    // ========================================================================
+    case 'thread:create':
+        $fid = isset($options['fid']) ? (int)$options['fid'] : 0;
+        $subject = $options['subject'] ?? '';
+        $message = $options['message'] ?? '';
+        $uid = isset($options['uid']) ? (int)$options['uid'] : 1;
+        $username = $options['username'] ?? 'Admin';
+
+        if ($fid <= 0 || $subject === '' || $message === '') {
+            respond(false, [], "Required: --fid, --subject, --message");
+        }
+
+        require_once MYBB_ROOT . "inc/datahandlers/post.php";
+        $posthandler = new PostDataHandler("insert");
+        $posthandler->action = "thread";
+
+        // PostDataHandler expects a packed ip for validation paths.
+        $packed_ip = my_inet_pton('127.0.0.1');
+        $posthash = md5(uniqid((string)mt_rand(), true));
+
+        $new_thread = array(
+            "fid" => $fid,
+            "subject" => $subject,
+            "prefix" => 0,
+            "icon" => 0,
+            "uid" => $uid,
+            "username" => $username,
+            "message" => $message,
+            "ipaddress" => $packed_ip,
+            "posthash" => $posthash,
+            "savedraft" => 0,
+            "options" => array(
+                "signature" => 0,
+                "subscriptionmethod" => 0,
+                "disablesmilies" => 0
+            ),
+            "modoptions" => array()
+        );
+
+        $posthandler->set_data($new_thread);
+        $valid_thread = $posthandler->validate_thread();
+        if (!$valid_thread) {
+            $errors = $posthandler->get_friendly_errors();
+            respond(false, ["errors" => $errors], "Thread validation failed");
+        }
+
+        $threadinfo = $posthandler->insert_thread();
+        respond(true, [
+            "tid" => (int)$posthandler->tid,
+            "pid" => (int)$posthandler->pid,
+            "visibility" => $threadinfo["visible"] ?? null,
+            "actions_taken" => ["thread_created"]
+        ]);
+        break;
+
+    case 'thread:edit':
+        $tid = isset($options['tid']) ? (int)$options['tid'] : 0;
+        if ($tid <= 0) {
+            respond(false, [], "Required: --tid");
+        }
+
+        $actions_taken = [];
+        require_once MYBB_ROOT . "inc/class_moderation.php";
+        $moderation = new Moderation;
+
+        if (isset($options['subject'])) {
+            $subject = (string)$options['subject'];
+            $moderation->change_thread_subject($tid, $subject);
+            $actions_taken[] = "thread_subject_updated";
+        }
+
+        if (isset($options['closed'])) {
+            $closed = (int)$options['closed'];
+            if ($closed === 1) {
+                $moderation->close_threads([$tid]);
+                $actions_taken[] = "thread_closed";
+            } elseif ($closed === 0) {
+                $moderation->open_threads([$tid]);
+                $actions_taken[] = "thread_opened";
+            }
+        }
+
+        if (isset($options['sticky'])) {
+            $sticky = (int)$options['sticky'];
+            if ($sticky === 1) {
+                $moderation->stick_threads([$tid]);
+                $actions_taken[] = "thread_stuck";
+            } elseif ($sticky === 0) {
+                $moderation->unstick_threads([$tid]);
+                $actions_taken[] = "thread_unstuck";
+            }
+        }
+
+        if (isset($options['visible'])) {
+            $visible = (int)$options['visible'];
+            if ($visible === 1) {
+                $moderation->approve_threads([$tid]);
+                $actions_taken[] = "thread_approved";
+            } elseif ($visible === 0) {
+                $moderation->unapprove_threads([$tid]);
+                $actions_taken[] = "thread_unapproved";
+            } elseif ($visible === -1) {
+                $moderation->soft_delete_threads([$tid]);
+                $actions_taken[] = "thread_soft_deleted";
+            }
+        }
+
+        if (empty($actions_taken)) {
+            respond(false, [], "No editable fields provided. Use --subject, --closed, --sticky, or --visible.");
+        }
+
+        respond(true, [
+            "tid" => $tid,
+            "actions_taken" => $actions_taken
+        ]);
+        break;
+
+    case 'thread:delete':
+        $tid = isset($options['tid']) ? (int)$options['tid'] : 0;
+        $soft = isset($options['soft']);
+
+        if ($tid <= 0) {
+            respond(false, [], "Required: --tid");
+        }
+
+        require_once MYBB_ROOT . "inc/class_moderation.php";
+        $moderation = new Moderation;
+        if ($soft) {
+            $moderation->soft_delete_threads([$tid]);
+            respond(true, [
+                "tid" => $tid,
+                "actions_taken" => ["thread_soft_deleted"]
+            ]);
+        } else {
+            $ok = $moderation->delete_thread($tid);
+            if (!$ok) {
+                respond(false, ["tid" => $tid], "Thread deletion failed");
+            }
+            respond(true, [
+                "tid" => $tid,
+                "actions_taken" => ["thread_deleted"]
+            ]);
+        }
+        break;
+
+    case 'thread:move':
+        $tid = isset($options['tid']) ? (int)$options['tid'] : 0;
+        $new_fid = isset($options['new_fid']) ? (int)$options['new_fid'] : 0;
+
+        if ($tid <= 0 || $new_fid <= 0) {
+            respond(false, [], "Required: --tid, --new_fid");
+        }
+
+        require_once MYBB_ROOT . "inc/class_moderation.php";
+        $moderation = new Moderation;
+        $result = $moderation->move_thread($tid, $new_fid, "move", 0);
+        if ($result === false) {
+            respond(false, ["tid" => $tid, "new_fid" => $new_fid], "Thread move failed");
+        }
+
+        respond(true, [
+            "tid" => $tid,
+            "new_fid" => $new_fid,
+            "actions_taken" => ["thread_moved"]
+        ]);
+        break;
+
+    case 'post:create':
+        $tid = isset($options['tid']) ? (int)$options['tid'] : 0;
+        $message = $options['message'] ?? '';
+        $uid = isset($options['uid']) ? (int)$options['uid'] : 1;
+        $username = $options['username'] ?? 'Admin';
+        $replyto = isset($options['replyto']) ? (int)$options['replyto'] : 0;
+
+        if ($tid <= 0 || $message === '') {
+            respond(false, [], "Required: --tid, --message");
+        }
+
+        $thread = get_thread($tid);
+        if (!$thread || empty($thread['fid'])) {
+            respond(false, ["tid" => $tid], "Thread not found");
+        }
+
+        $subject = $options['subject'] ?? ("RE: " . ($thread['subject'] ?? ''));
+
+        require_once MYBB_ROOT . "inc/datahandlers/post.php";
+        $posthandler = new PostDataHandler("insert");
+
+        $packed_ip = my_inet_pton('127.0.0.1');
+        $posthash = md5(uniqid((string)mt_rand(), true));
+
+        $post = array(
+            "tid" => $tid,
+            "replyto" => $replyto,
+            "fid" => (int)$thread['fid'],
+            "subject" => $subject,
+            "icon" => 0,
+            "uid" => $uid,
+            "username" => $username,
+            "message" => $message,
+            "ipaddress" => $packed_ip,
+            "posthash" => $posthash,
+            "savedraft" => 0,
+            "options" => array(
+                "signature" => 0,
+                "subscriptionmethod" => 0,
+                "disablesmilies" => 0
+            ),
+            "modoptions" => array()
+        );
+
+        $posthandler->set_data($post);
+        $valid_post = $posthandler->validate_post();
+        if (!$valid_post) {
+            $errors = $posthandler->get_friendly_errors();
+            respond(false, ["errors" => $errors], "Post validation failed");
+        }
+
+        $postinfo = $posthandler->insert_post();
+        respond(true, [
+            "pid" => (int)($postinfo["pid"] ?? 0),
+            "visibility" => $postinfo["visible"] ?? null,
+            "actions_taken" => ["post_created"]
+        ]);
+        break;
+
+    case 'post:edit':
+        $pid = isset($options['pid']) ? (int)$options['pid'] : 0;
+        $edituid = null;
+        if (isset($options['edituid'])) {
+            $edituid = (int)$options['edituid'];
+        } elseif (isset($options['edit_uid'])) {
+            $edituid = (int)$options['edit_uid'];
+        }
+        $editreason = $options['editreason'] ?? '';
+        $subject_in = $options['subject'] ?? null;
+        $message_in = $options['message'] ?? null;
+        $signature_in = isset($options['signature']) ? (int)$options['signature'] : null;
+        $disablesmilies_in = isset($options['disablesmilies']) ? (int)$options['disablesmilies'] : null;
+
+        if ($pid <= 0) {
+            respond(false, [], "Required: --pid");
+        }
+
+        if ($subject_in === null && $message_in === null) {
+            respond(false, [], "Provide at least one of --subject or --message");
+        }
+
+        $post = get_post($pid);
+        if (!$post) {
+            respond(false, ["pid" => $pid], "Post not found");
+        }
+
+        $thread = get_thread($post['tid']);
+        $prefix = ($thread && isset($thread['prefix'])) ? (int)$thread['prefix'] : 0;
+
+        require_once MYBB_ROOT . "inc/datahandlers/post.php";
+        $posthandler = new PostDataHandler("update");
+
+        $subject = $subject_in ?? $post['subject'];
+        $message = $message_in ?? $post['message'];
+        $signature = $signature_in ?? (isset($post['includesig']) ? (int)$post['includesig'] : 0);
+        $disablesmilies = $disablesmilies_in ?? (isset($post['smilieoff']) ? (int)$post['smilieoff'] : 0);
+        $icon = isset($post['icon']) ? (int)$post['icon'] : 0;
+
+        $post_data = array(
+            "pid" => $pid,
+            "tid" => (int)$post['tid'],
+            "prefix" => $prefix,
+            "subject" => $subject,
+            "icon" => $icon,
+            "uid" => (int)$post['uid'],
+            "username" => $post['username'],
+            "edit_uid" => $edituid !== null ? $edituid : (int)$post['uid'],
+            "message" => $message,
+            "editreason" => $editreason,
+            "options" => array(
+                "signature" => $signature,
+                "disablesmilies" => $disablesmilies
+            )
+        );
+
+        $posthandler->set_data($post_data);
+        if (!$posthandler->validate_post()) {
+            $errors = $posthandler->get_friendly_errors();
+            respond(false, ["errors" => $errors], "Post validation failed");
+        }
+
+        $postinfo = $posthandler->update_post();
+        respond(true, [
+            "pid" => $pid,
+            "visibility" => $postinfo["visible"] ?? null,
+            "first_post" => $postinfo["first_post"] ?? null,
+            "actions_taken" => ["post_edited"]
+        ]);
+        break;
+
+    case 'post:delete':
+        $pid = isset($options['pid']) ? (int)$options['pid'] : 0;
+        $soft = isset($options['soft']);
+        $restore = isset($options['restore']);
+
+        if ($pid <= 0) {
+            respond(false, [], "Required: --pid");
+        }
+
+        if ($restore) {
+            require_once MYBB_ROOT . "inc/class_moderation.php";
+            $moderation = new Moderation;
+            $ok = $moderation->restore_posts([$pid]);
+            if (!$ok) {
+                respond(false, ["pid" => $pid], "Post restore failed");
+            }
+            respond(true, [
+                "pid" => $pid,
+                "actions_taken" => ["post_restored"]
+            ]);
+        } elseif ($soft) {
+            require_once MYBB_ROOT . "inc/class_moderation.php";
+            $moderation = new Moderation;
+            $moderation->soft_delete_posts([$pid]);
+            respond(true, [
+                "pid" => $pid,
+                "actions_taken" => ["post_soft_deleted"]
+            ]);
+        } else {
+            $ok = delete_post($pid);
+            if (!$ok) {
+                respond(false, ["pid" => $pid], "Post deletion failed");
+            }
+            respond(true, [
+                "pid" => $pid,
+                "actions_taken" => ["post_deleted"]
+            ]);
+        }
+        break;
+
     // ========================================================================
     // Info Action
     // ========================================================================
     case 'info':
         respond(true, [
+            'bridge_version' => MCP_BRIDGE_VERSION,
+            'protocol_version' => MCP_BRIDGE_PROTOCOL_VERSION,
+            'supported_actions' => [
+                'plugin:status',
+                'plugin:activate',
+                'plugin:deactivate',
+                'plugin:list',
+                'cache:read',
+                'cache:rebuild',
+                'cache:rebuild_smilies',
+                'template:write',
+                'template:find_replace',
+                'template:batch_write',
+                'stylesheet:write',
+                'forum:create',
+                'forum:update',
+                'forum:delete',
+                'user:update_group',
+                'user:ban',
+                'user:unban',
+                'mod:close_thread',
+                'mod:stick_thread',
+                'mod:approve_thread',
+                'mod:approve_post',
+                'mod:soft_delete_thread',
+                'mod:restore_thread',
+                'mod:soft_delete_post',
+                'mod:restore_post',
+                'modlog:add',
+                'thread:create',
+                'thread:edit',
+                'thread:delete',
+                'thread:move',
+                'post:create',
+                'post:edit',
+                'post:delete',
+                'info',
+        ],
             'mybb_version' => $mybb->version,
             'mybb_version_code' => $mybb->version_code,
             'php_version' => PHP_VERSION,

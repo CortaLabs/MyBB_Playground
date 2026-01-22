@@ -2,6 +2,9 @@
 # MyBB Playground - Comprehensive .gitignore
 # ============================================
 
+# Scribe project files
+.scribe/
+
 # ===========================================
 # MyBB Specific
 # ===========================================
@@ -237,4 +240,3 @@ plugin_manager/themes/*/
 !plugin_manager/plugins/public/cortex/
 !plugin_manager/plugins/public/dice_roller/
 # END MYBB-FORGE MANAGED
-
