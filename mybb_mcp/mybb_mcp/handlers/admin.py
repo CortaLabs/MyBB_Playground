@@ -3,6 +3,8 @@
 from typing import Any
 from datetime import datetime
 
+from ..bridge import MyBBBridgeClient
+
 
 # ==================== Settings Handlers ====================
 
@@ -44,7 +46,7 @@ async def handle_setting_set(args: dict, db: Any, config: Any, sync_service: Any
     Args:
         args: Tool arguments containing 'name' and 'value' parameters
         db: MyBBDatabase instance
-        config: Server configuration (unused)
+        config: Server configuration
         sync_service: Disk sync service (unused)
 
     Returns:
@@ -55,20 +57,21 @@ async def handle_setting_set(args: dict, db: Any, config: Any, sync_service: Any
     if not setting_name or value is None:
         return "Error: 'name' and 'value' parameters are required."
 
-    # Check if setting exists
-    setting = db.get_setting(setting_name)
-    if not setting:
-        return f"Setting '{setting_name}' not found."
+    # Use bridge for setting update
+    bridge = MyBBBridgeClient(config.mybb_root)
+    info = await bridge.call_async("info")
+    if not info.success:
+        return f"Error: Bridge info failed: {info.error or 'unknown error'}"
 
-    # Update setting
-    success = db.set_setting(setting_name, value)
-    if not success:
-        return f"Failed to update setting '{setting_name}'."
+    supported = info.data.get("supported_actions", [])
+    if "setting:set" not in supported:
+        return "Error: Bridge does not support 'setting:set' yet."
 
-    # Rebuild settings cache
-    db.rebuild_cache("settings")
+    result = await bridge.call_async("setting:set", name=setting_name, value=value)
+    if not result.success:
+        return f"Error: Bridge setting:set failed: {result.error or 'unknown error'}"
 
-    return f"Setting '{setting_name}' updated to '{value}'. Settings cache rebuilt."
+    return f"# Setting Updated (Bridge)\n\nSetting '{setting_name}' updated to '{value}'. Settings cache rebuilt automatically."
 
 
 async def handle_setting_list(args: dict, db: Any, config: Any, sync_service: Any) -> str:
@@ -343,6 +346,78 @@ async def handle_stats_board(args: dict, db: Any, config: Any, sync_service: Any
     return "\n".join(lines)
 
 
+async def handle_bridge_health_check(args: dict, db: Any, config: Any, sync_service: Any) -> str:
+    """Run bridge health check / smoke test.
+
+    Args:
+        args: Tool arguments containing 'mode' and 'format' parameters
+        db: MyBBDatabase instance (unused)
+        config: Server configuration
+        sync_service: Disk sync service (unused)
+
+    Returns:
+        Health check results as formatted markdown or JSON
+    """
+    mode = args.get("mode", "quick")
+    output_format = args.get("format", "summary")
+
+    if mode not in ("quick", "full"):
+        return "Error: mode must be 'quick' or 'full'"
+
+    # Use bridge for health check
+    bridge = MyBBBridgeClient(config.mybb_root)
+    result = await bridge.call_async("bridge:health_check", mode=mode)
+
+    if not result.success:
+        return f"Error: Health check failed: {result.error or 'Unknown error'}"
+
+    data = result.data
+
+    if output_format == "json":
+        import json
+        return json.dumps(data, indent=2)
+
+    # Summary format
+    health = data.get("health", "UNKNOWN")
+    core = data.get("core", {})
+    ctx = data.get("forum_context", {})
+    subs = data.get("subsystems", {})
+
+    health_icon = "✅" if health == "HEALTHY" else "⚠️" if health == "DEGRADED" else "❌"
+
+    lines = [
+        f"# Bridge Health Check - {health_icon} {health}\n",
+        "━" * 40,
+        f"**MyBB:** {core.get('mybb_version', '?')} | **PHP:** {core.get('php_version', '?')} | **DB:** {core.get('db_engine', '?')}",
+        "",
+        f"**Forum:** {ctx.get('board_name', 'Unknown')}",
+        f"**Users:** {ctx.get('total_users', 0):,} | **Threads:** {ctx.get('total_threads', 0):,} | **Posts:** {ctx.get('total_posts', 0):,}",
+        "",
+        f"**Subsystems:** {len([s for s in subs.values() if s.get('read')])} / {len(subs)} OK",
+        f"**Actions:** {data.get('action_count', 0)} supported",
+    ]
+
+    # Write tests summary if full mode
+    write_tests = data.get("write_tests", {})
+    if write_tests.get("enabled"):
+        results = write_tests.get("results", {})
+        passed = len([r for r in results.values() if r.get("pass")])
+        total = len(results)
+        duration = write_tests.get("duration_ms", 0)
+        lines.append("")
+        lines.append(f"**Write Tests:** {passed}/{total} PASS ({duration}ms)")
+
+    # Issues if any
+    issues = data.get("issues", [])
+    if issues:
+        lines.append("")
+        lines.append("## Issues")
+        for issue in issues:
+            lines.append(f"  ⚠️ {issue}")
+
+    return "\n".join(lines)
+
+
 # ==================== Template Groups Handler ====================
 
 async def handle_list_template_groups(args: dict, db: Any, config: Any, sync_service: Any) -> str:
@@ -382,5 +457,6 @@ ADMIN_HANDLERS = {
     "mybb_cache_clear": handle_cache_clear,
     "mybb_stats_forum": handle_stats_forum,
     "mybb_stats_board": handle_stats_board,
+    "mybb_bridge_health_check": handle_bridge_health_check,
     "mybb_list_template_groups": handle_list_template_groups,
 }

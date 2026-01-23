@@ -3,6 +3,8 @@
 from typing import Any
 import datetime
 
+from ..bridge import MyBBBridgeClient
+
 
 async def handle_task_list(args: dict, db: Any, config: Any, sync_service: Any) -> str:
     """List all scheduled tasks.
@@ -86,17 +88,31 @@ async def handle_task_enable(args: dict, db: Any, config: Any, sync_service: Any
     Args:
         args: Tool arguments containing 'tid' parameter
         db: MyBBDatabase instance
-        config: Server configuration (unused)
+        config: Server configuration
         sync_service: Disk sync service (unused)
 
     Returns:
         Success or error message
     """
     tid = args.get("tid")
-    if db.enable_task(tid):
-        return f"Task {tid} enabled successfully."
-    else:
-        return f"Failed to enable task {tid}. Task may not exist."
+    if not tid:
+        return "Error: 'tid' parameter is required."
+
+    # Use bridge for task enable
+    bridge = MyBBBridgeClient(config.mybb_root)
+    info = await bridge.call_async("info")
+    if not info.success:
+        return f"Error: Bridge info failed: {info.error or 'unknown error'}"
+
+    supported = info.data.get("supported_actions", [])
+    if "task:enable" not in supported:
+        return "Error: Bridge does not support 'task:enable' yet."
+
+    result = await bridge.call_async("task:enable", tid=tid)
+    if not result.success:
+        return f"Error: Bridge task:enable failed: {result.error or 'unknown error'}"
+
+    return f"# Task Enabled (Bridge)\n\nTask {tid} enabled successfully. Cache updated automatically."
 
 
 async def handle_task_disable(args: dict, db: Any, config: Any, sync_service: Any) -> str:
@@ -105,17 +121,31 @@ async def handle_task_disable(args: dict, db: Any, config: Any, sync_service: An
     Args:
         args: Tool arguments containing 'tid' parameter
         db: MyBBDatabase instance
-        config: Server configuration (unused)
+        config: Server configuration
         sync_service: Disk sync service (unused)
 
     Returns:
         Success or error message
     """
     tid = args.get("tid")
-    if db.disable_task(tid):
-        return f"Task {tid} disabled successfully."
-    else:
-        return f"Failed to disable task {tid}. Task may not exist."
+    if not tid:
+        return "Error: 'tid' parameter is required."
+
+    # Use bridge for task disable
+    bridge = MyBBBridgeClient(config.mybb_root)
+    info = await bridge.call_async("info")
+    if not info.success:
+        return f"Error: Bridge info failed: {info.error or 'unknown error'}"
+
+    supported = info.data.get("supported_actions", [])
+    if "task:disable" not in supported:
+        return "Error: Bridge does not support 'task:disable' yet."
+
+    result = await bridge.call_async("task:disable", tid=tid)
+    if not result.success:
+        return f"Error: Bridge task:disable failed: {result.error or 'unknown error'}"
+
+    return f"# Task Disabled (Bridge)\n\nTask {tid} disabled successfully. Cache updated automatically."
 
 
 async def handle_task_update_nextrun(args: dict, db: Any, config: Any, sync_service: Any) -> str:
@@ -124,7 +154,7 @@ async def handle_task_update_nextrun(args: dict, db: Any, config: Any, sync_serv
     Args:
         args: Tool arguments containing 'tid' and 'nextrun' parameters
         db: MyBBDatabase instance
-        config: Server configuration (unused)
+        config: Server configuration
         sync_service: Disk sync service (unused)
 
     Returns:
@@ -133,11 +163,25 @@ async def handle_task_update_nextrun(args: dict, db: Any, config: Any, sync_serv
     tid = args.get("tid")
     nextrun = args.get("nextrun")
 
-    if db.update_task_nextrun(tid, nextrun):
-        next_run_str = datetime.datetime.fromtimestamp(nextrun).strftime('%Y-%m-%d %H:%M:%S')
-        return f"Task {tid} next run updated to {next_run_str} (Unix: {nextrun})."
-    else:
-        return f"Failed to update task {tid}. Task may not exist."
+    if not tid or nextrun is None:
+        return "Error: 'tid' and 'nextrun' parameters are required."
+
+    # Use bridge for task nextrun update
+    bridge = MyBBBridgeClient(config.mybb_root)
+    info = await bridge.call_async("info")
+    if not info.success:
+        return f"Error: Bridge info failed: {info.error or 'unknown error'}"
+
+    supported = info.data.get("supported_actions", [])
+    if "task:update_nextrun" not in supported:
+        return "Error: Bridge does not support 'task:update_nextrun' yet."
+
+    result = await bridge.call_async("task:update_nextrun", tid=tid, nextrun=nextrun)
+    if not result.success:
+        return f"Error: Bridge task:update_nextrun failed: {result.error or 'unknown error'}"
+
+    next_run_str = datetime.datetime.fromtimestamp(nextrun).strftime('%Y-%m-%d %H:%M:%S')
+    return f"# Task Next Run Updated (Bridge)\n\nTask {tid} next run updated to {next_run_str} (Unix: {nextrun}). Cache updated automatically."
 
 
 async def handle_task_run_log(args: dict, db: Any, config: Any, sync_service: Any) -> str:

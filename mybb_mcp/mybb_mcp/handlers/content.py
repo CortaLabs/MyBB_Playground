@@ -166,12 +166,15 @@ async def handle_forum_delete(args: dict, db: Any, config: Any, sync_service: An
         Success or error message
 
     Note:
-        Does not handle content migration. Ensure forum is empty first.
+        By default, does not delete forums with content. Use force_content_deletion=True
+        to delete content via MyBB's Moderation class (proper cleanup with hooks).
         Uses bridge for proper cache invalidation.
     """
     fid = args.get("fid")
     if not fid:
         return "Error: 'fid' is required."
+
+    force_content_deletion = args.get("force_content_deletion", False)
 
     bridge = MyBBBridgeClient(config.mybb_root)
     info = await bridge.call_async("info")
@@ -181,13 +184,22 @@ async def handle_forum_delete(args: dict, db: Any, config: Any, sync_service: An
     if "forum:delete" not in supported:
         return "Error: Bridge does not support 'forum:delete' yet."
 
-    result = await bridge.call_async("forum:delete", fid=fid)
+    result = await bridge.call_async("forum:delete", fid=fid, force_content_deletion=force_content_deletion)
 
     if not result.success:
         # Bridge returns detailed error for content check
-        return f"Error: Bridge forum:delete failed: {result.error or 'unknown error'}"
+        error_msg = result.error or 'unknown error'
+        if "has content" in error_msg.lower():
+            return f"Error: {error_msg}\n\nUse `force_content_deletion=True` to delete forum and its content."
+        return f"Error: Bridge forum:delete failed: {error_msg}"
 
-    return f"# Forum Deleted (Bridge)\n\nForum {fid} deleted successfully."
+    actions = result.data.get("actions_taken", [])
+    content_deleted = "content_deleted_via_moderation" in actions
+
+    msg = f"# Forum Deleted (Bridge)\n\nForum {fid} deleted successfully."
+    if content_deleted:
+        msg += "\n\n**Note:** Forum content was deleted via MyBB Moderation class."
+    return msg
 
 
 # ==================== Thread Handlers ====================

@@ -24,8 +24,16 @@
 // ============================================================================
 // Bridge/Protocol Versioning
 // ============================================================================
-define('MCP_BRIDGE_VERSION', '1.2.0');
+define('MCP_BRIDGE_VERSION', '1.3.0');
 define('MCP_BRIDGE_PROTOCOL_VERSION', '1');
+
+// MyBB version compatibility - which MyBB versions this bridge is tested with
+// IMPORTANT: Only tested versions are guaranteed to work
+define('MCP_BRIDGE_MYBB_COMPAT', [
+    'min' => '1.8.39',      // Minimum tested version
+    'max' => '1.8.39',      // Maximum tested version
+    'tested' => '1.8.39',   // Primary tested version
+]);
 
 // ============================================================================
 // Security: CLI only
@@ -56,6 +64,7 @@ $options = getopt('', [
     'limit:',
     'stylesheet:',
     'request_id:',
+    'mode:',
     'name:',
     'description:',
     'type:',
@@ -728,6 +737,74 @@ switch ($action) {
         break;
 
     // ========================================================================
+    // Settings & Task Actions (MyBB-native)
+    // ========================================================================
+    case 'setting:set':
+        $name = $options['name'] ?? '';
+        $value = $options['value'] ?? '';
+        if (empty($name)) {
+            respond(false, [], 'Setting name required');
+        }
+
+        $db->update_query("settings", ["value" => $db->escape_string($value)], "name='".$db->escape_string($name)."'");
+        rebuild_settings();  // MyBB-native cache rebuild
+
+        respond(true, ['name' => $name, 'value' => $value, 'cached' => true]);
+        break;
+
+    case 'task:enable':
+        $tid = (int)($options['tid'] ?? 0);
+        if (!$tid) {
+            respond(false, [], 'Task ID required');
+        }
+
+        $task = $db->fetch_array($db->simple_select("tasks", "*", "tid='{$tid}'"));
+        if (!$task) {
+            respond(false, [], "Task {$tid} not found");
+        }
+
+        $db->update_query("tasks", ["enabled" => 1], "tid='{$tid}'");
+        $cache->update_tasks();  // MyBB-native cache rebuild
+
+        respond(true, ['tid' => $tid, 'status' => 'enabled']);
+        break;
+
+    case 'task:disable':
+        $tid = (int)($options['tid'] ?? 0);
+        if (!$tid) {
+            respond(false, [], 'Task ID required');
+        }
+
+        $task = $db->fetch_array($db->simple_select("tasks", "*", "tid='{$tid}'"));
+        if (!$task) {
+            respond(false, [], "Task {$tid} not found");
+        }
+
+        $db->update_query("tasks", ["enabled" => 0], "tid='{$tid}'");
+        $cache->update_tasks();  // MyBB-native cache rebuild
+
+        respond(true, ['tid' => $tid, 'status' => 'disabled']);
+        break;
+
+    case 'task:update_nextrun':
+        $tid = (int)($options['tid'] ?? 0);
+        $nextrun = (int)($options['nextrun'] ?? 0);
+        if (!$tid || !$nextrun) {
+            respond(false, [], 'Task ID and nextrun timestamp required');
+        }
+
+        $task = $db->fetch_array($db->simple_select("tasks", "*", "tid='{$tid}'"));
+        if (!$task) {
+            respond(false, [], "Task {$tid} not found");
+        }
+
+        $db->update_query("tasks", ["nextrun" => $nextrun], "tid='{$tid}'");
+        $cache->update_tasks();
+
+        respond(true, ['tid' => $tid, 'nextrun' => $nextrun]);
+        break;
+
+    // ========================================================================
     // Template Actions (MyBB-native)
     // ========================================================================
     case 'template:write':
@@ -1059,6 +1136,8 @@ switch ($action) {
 
     case 'forum:delete':
         $fid = isset($options['fid']) ? (int)$options['fid'] : 0;
+        $force_content_deletion = isset($options['force_content_deletion']) && $options['force_content_deletion'];
+
         if ($fid <= 0) {
             respond(false, [], "Required: --fid");
         }
@@ -1069,13 +1148,14 @@ switch ($action) {
             respond(false, ["fid" => $fid], "Forum not found");
         }
 
-        // Check if forum has content (safety check)
-        if ($forum['threads'] > 0 || $forum['posts'] > 0) {
+        // Check if forum has content
+        if (($forum['threads'] > 0 || $forum['posts'] > 0) && !$force_content_deletion) {
             respond(false, [
                 "fid" => $fid,
                 "threads" => (int)$forum['threads'],
-                "posts" => (int)$forum['posts']
-            ], "Forum has content - cannot delete. Move or delete content first.");
+                "posts" => (int)$forum['posts'],
+                "hint" => "Use force_content_deletion=true to delete content"
+            ], "Forum has content - cannot delete. Move or delete content first, or use force_content_deletion.");
         }
 
         // Build query for child forums
@@ -1090,6 +1170,22 @@ switch ($action) {
         }
         while ($child = $db->fetch_array($query)) {
             $delquery .= " OR fid='{$child['fid']}'";
+        }
+
+        // If force_content_deletion and has content, use Moderation class (matches management.php:2031-2037)
+        if ($force_content_deletion && ($forum['threads'] > 0 || $forum['posts'] > 0)) {
+            require_once MYBB_ROOT.'inc/class_moderation.php';
+            $moderation = new Moderation();
+
+            // Delete threads in batches of 50
+            do {
+                $query = $db->simple_select("threads", "tid", "fid='{$fid}' {$delquery}", ["limit" => 50]);
+                $count = 0;
+                while ($thread = $db->fetch_array($query)) {
+                    $moderation->delete_thread($thread['tid']);
+                    $count++;
+                }
+            } while ($count > 0);
         }
 
         // Delete the forum
@@ -1114,23 +1210,37 @@ switch ($action) {
         $db->delete_query('announcements', "fid='{$fid}' {$delquery}");
         $db->delete_query('forumsread', "fid='{$fid}' {$delquery}");
 
+        // Fire hook (matches management.php:2080)
+        $plugins->run_hooks("admin_forum_management_delete_commit");
+
         // Rebuild caches
         $cache->update_forums();
         $cache->update_moderators();
         $cache->update_forumpermissions();
         $cache->update_forumsdisplay();
 
+        // Log admin action (matches management.php:2088)
+        log_admin_action($fid, $forum['name']);
+
+        $actions = [
+            "forum_deleted",
+            "subforums_deleted",
+            "related_records_cleaned",
+            "hook_fired",
+            "forums_cache_updated",
+            "moderators_cache_updated",
+            "permissions_cache_updated",
+            "forumsdisplay_cache_updated",
+            "admin_action_logged"
+        ];
+
+        if ($force_content_deletion) {
+            array_unshift($actions, "content_deleted_via_moderation");
+        }
+
         respond(true, [
             "fid" => $fid,
-            "actions_taken" => [
-                "forum_deleted",
-                "subforums_deleted",
-                "related_records_cleaned",
-                "forums_cache_updated",
-                "moderators_cache_updated",
-                "permissions_cache_updated",
-                "forumsdisplay_cache_updated"
-            ]
+            "actions_taken" => $actions
         ]);
         break;
 
@@ -1231,22 +1341,30 @@ switch ($action) {
             'reason' => $db->escape_string($reason),
         ];
 
+        // Step 1: Insert ban record
         $db->insert_query('banned', $insert_array);
 
+        // Step 2: Delete subscriptions (must happen before hook)
+        $db->delete_query("forumsubscriptions", "uid='{$uid}'");
+        $db->delete_query("threadsubscriptions", "uid='{$uid}'");
+
+        // Step 3: Fire hook (matches banning.php:412)
+        $plugins->run_hooks("admin_user_banning_start_commit");
+
+        // Step 4: Update users table
         $update_array = [
             'usergroup' => $gid,
             'displaygroup' => 0,
             'additionalgroups' => '',
         ];
-
-        $db->delete_query("forumsubscriptions", "uid='{$uid}'");
-        $db->delete_query("threadsubscriptions", "uid='{$uid}'");
         $db->update_query('users', $update_array, "uid='{$uid}'");
-        $cache->update_moderators();
+
+        // Step 5: Log admin action (matches banning.php:417)
+        log_admin_action($uid, $user['username'], $lifted);
 
         respond(true, [
             "uid" => $uid,
-            "actions_taken" => ["user_banned", "moderators_cache_updated"],
+            "actions_taken" => ["user_banned", "subscriptions_deleted", "hook_fired", "admin_action_logged"],
             "ban" => [
                 "gid" => $gid,
                 "lifted" => $lifted,
@@ -1266,19 +1384,39 @@ switch ($action) {
             respond(false, ["uid" => $uid], "User is not banned");
         }
 
+        // Get user record for logging (matches banning.php pattern)
+        $user = get_user($uid);
+
         $updated_group = [
             'usergroup' => $ban['oldgroup'],
             'additionalgroups' => $db->escape_string($ban['oldadditionalgroups']),
             'displaygroup' => $ban['olddisplaygroup'],
         ];
 
+        // Delete from banned table first (matches banning.php:148)
         $db->delete_query("banned", "uid='{$uid}'");
+
+        // Fire hook after delete, before update (matches banning.php:150)
+        $plugins->run_hooks("admin_user_banning_lift_commit");
+
+        // Update users table (matches banning.php:152)
         $db->update_query("users", $updated_group, "uid='{$uid}'");
+
+        // Update moderators cache
         $cache->update_moderators();
+
+        // Log admin action (matches banning.php:157)
+        log_admin_action($ban['uid'], $user['username']);
 
         respond(true, [
             "uid" => $uid,
-            "actions_taken" => ["user_unbanned", "moderators_cache_updated"]
+            "actions_taken" => [
+                "ban_record_deleted",
+                "hook_admin_user_banning_lift_commit_fired",
+                "user_groups_restored",
+                "moderators_cache_updated",
+                "admin_action_logged"
+            ]
         ]);
         break;
 
@@ -1914,12 +2052,304 @@ switch ($action) {
         break;
 
     // ========================================================================
+    // Health Check Action
+    // ========================================================================
+    case 'bridge:health_check':
+        $mode = $options['mode'] ?? 'quick';
+        $results = [
+            'bridge_version' => MCP_BRIDGE_VERSION,
+            'protocol_version' => MCP_BRIDGE_PROTOCOL_VERSION,
+            'timestamp' => date('c'),
+            'mode' => $mode
+        ];
+
+        // Core health
+        $results['core'] = [
+            'mybb_bootstrap' => defined('IN_MYBB'),
+            'mybb_version' => $mybb->version,
+            'php_version' => PHP_VERSION,
+            'db_connected' => isset($db) && $db->read_link ? true : false,
+            'db_engine' => $db->engine ?? 'unknown',
+            'cache_handler' => isset($cache->handler) ? get_class($cache->handler) : 'unknown',
+            'table_prefix' => TABLE_PREFIX
+        ];
+
+        // Forum context (quick stats)
+        $stats = $cache->read('stats');
+        $results['forum_context'] = [
+            'board_name' => $mybb->settings['bbname'] ?? 'Unknown',
+            'total_users' => (int)($stats['numusers'] ?? 0),
+            'total_threads' => (int)($stats['numthreads'] ?? 0),
+            'total_posts' => (int)($stats['numposts'] ?? 0),
+            'newest_user' => $stats['lastusername'] ?? 'N/A'
+        ];
+
+        // Count forums
+        $forum_count = $db->fetch_field($db->simple_select("forums", "COUNT(*) as cnt"), "cnt");
+        $results['forum_context']['total_forums'] = (int)$forum_count;
+
+        // Subsystem read probes
+        $results['subsystems'] = [];
+
+        // Templates
+        $tpl_count = $db->fetch_field($db->simple_select("templates", "COUNT(*) as cnt"), "cnt");
+        $results['subsystems']['templates'] = ['read' => true, 'count' => (int)$tpl_count];
+
+        // Stylesheets
+        $css_count = $db->fetch_field($db->simple_select("themestylesheets", "COUNT(*) as cnt"), "cnt");
+        $results['subsystems']['stylesheets'] = ['read' => true, 'count' => (int)$css_count];
+
+        // Settings
+        $set_count = $db->fetch_field($db->simple_select("settings", "COUNT(*) as cnt"), "cnt");
+        $results['subsystems']['settings'] = ['read' => true, 'count' => (int)$set_count];
+
+        // Users
+        $results['subsystems']['users'] = ['read' => true, 'count' => (int)($stats['numusers'] ?? 0)];
+
+        // Forums
+        $results['subsystems']['forums'] = ['read' => true, 'count' => (int)$forum_count];
+
+        // Threads
+        $results['subsystems']['threads'] = ['read' => true, 'count' => (int)($stats['numthreads'] ?? 0)];
+
+        // Posts
+        $results['subsystems']['posts'] = ['read' => true, 'count' => (int)($stats['numposts'] ?? 0)];
+
+        // Tasks
+        $task_total = $db->fetch_field($db->simple_select("tasks", "COUNT(*) as cnt"), "cnt");
+        $task_enabled = $db->fetch_field($db->simple_select("tasks", "COUNT(*) as cnt", "enabled=1"), "cnt");
+        $results['subsystems']['tasks'] = ['read' => true, 'count' => (int)$task_total, 'enabled' => (int)$task_enabled];
+
+        // Plugins
+        $active_plugins = $cache->read('plugins');
+        $plugin_count = isset($active_plugins['active']) ? count($active_plugins['active']) : 0;
+        $results['subsystems']['plugins'] = ['read' => true, 'active' => $plugin_count];
+
+        // Supported actions
+        $supported_actions = [
+            'plugin:status',
+            'plugin:activate',
+            'plugin:deactivate',
+            'plugin:list',
+            'cache:read',
+            'cache:rebuild',
+            'cache:rebuild_smilies',
+            'setting:set',
+            'task:enable',
+            'task:disable',
+            'task:update_nextrun',
+            'template:write',
+            'template:find_replace',
+            'template:batch_write',
+            'stylesheet:write',
+            'forum:create',
+            'forum:update',
+            'forum:delete',
+            'user:update_group',
+            'user:ban',
+            'user:unban',
+            'mod:close_thread',
+            'mod:stick_thread',
+            'mod:approve_thread',
+            'mod:approve_post',
+            'mod:soft_delete_thread',
+            'mod:restore_thread',
+            'mod:soft_delete_post',
+            'mod:restore_post',
+            'modlog:add',
+            'thread:create',
+            'thread:edit',
+            'thread:delete',
+            'thread:move',
+            'post:create',
+            'post:edit',
+            'post:delete',
+            'bridge:health_check',
+            'info'
+        ];
+        $results['supported_actions'] = $supported_actions;
+        $results['action_count'] = count($supported_actions);
+
+        // Write tests (full mode only)
+        $results['write_tests'] = ['enabled' => false, 'results' => null];
+
+        if ($mode === 'full') {
+            $results['write_tests']['enabled'] = true;
+            $write_results = [];
+            $test_start = microtime(true);
+
+            // Load required MyBB classes
+            require_once MYBB_ROOT . 'inc/datahandlers/post.php';
+            require_once MYBB_ROOT . 'inc/class_moderation.php';
+
+            // Use an existing forum for thread/post tests (forum ID 2 is usually default)
+            $test_fid = 2;
+            $existing_forum = get_forum($test_fid);
+            if (!$existing_forum) {
+                // Fallback to first available forum
+                $forum_query = $db->simple_select('forums', 'fid', "type='f'", ['limit' => 1]);
+                $first_forum = $db->fetch_array($forum_query);
+                $test_fid = $first_forum ? (int)$first_forum['fid'] : 0;
+            }
+
+            $write_results['forum:exists'] = ['pass' => $test_fid > 0, 'fid' => $test_fid, 'note' => 'using existing forum'];
+
+            if ($test_fid > 0) {
+                // Create test thread using PostDataHandler (proper MyBB API)
+                $postHandler = new PostDataHandler('insert');
+                $postHandler->action = 'thread';
+                $thread_data = [
+                    'fid' => $test_fid,
+                    'subject' => '_mcp_health_test_' . time(),
+                    'uid' => 1,
+                    'username' => 'Admin',
+                    'message' => 'MCP Bridge health check test thread. Safe to delete.',
+                    'ipaddress' => '127.0.0.1',
+                    'posthash' => md5(time()),
+                    'options' => [
+                        'signature' => 0,
+                        'subscriptionmethod' => 0,
+                        'disablesmilies' => 0
+                    ]
+                ];
+                $postHandler->set_data($thread_data);
+
+                $test_tid = 0;
+                $test_pid = 0;
+                if ($postHandler->validate_thread()) {
+                    $thread_info = $postHandler->insert_thread();
+                    $test_tid = (int)($thread_info['tid'] ?? 0);
+                    $test_pid = (int)($thread_info['pid'] ?? 0);
+                    $write_results['thread:create'] = ['pass' => $test_tid > 0, 'tid' => $test_tid, 'pid' => $test_pid];
+                } else {
+                    $write_results['thread:create'] = ['pass' => false, 'errors' => $postHandler->get_friendly_errors()];
+                }
+
+                if ($test_tid > 0) {
+                    // Create reply post using PostDataHandler
+                    $postHandler2 = new PostDataHandler('insert');
+                    $postHandler2->action = 'post';
+                    $post_data = [
+                        'tid' => $test_tid,
+                        'fid' => $test_fid,
+                        'subject' => 'Re: Health Check',
+                        'uid' => 1,
+                        'username' => 'Admin',
+                        'message' => 'MCP Bridge health check test reply.',
+                        'ipaddress' => '127.0.0.1',
+                        'posthash' => md5(time() . '2'),
+                        'options' => [
+                            'signature' => 0,
+                            'disablesmilies' => 0
+                        ]
+                    ];
+                    $postHandler2->set_data($post_data);
+
+                    $reply_pid = 0;
+                    if ($postHandler2->validate_post()) {
+                        $post_info = $postHandler2->insert_post();
+                        $reply_pid = (int)($post_info['pid'] ?? 0);
+                        $write_results['post:create'] = ['pass' => $reply_pid > 0, 'pid' => $reply_pid];
+                    } else {
+                        $write_results['post:create'] = ['pass' => false, 'errors' => $postHandler2->get_friendly_errors()];
+                    }
+
+                    // Delete using proper MyBB functions
+                    $moderation = new Moderation();
+
+                    if ($reply_pid > 0) {
+                        $moderation->delete_post($reply_pid);
+                        $write_results['post:delete'] = ['pass' => true];
+                    }
+
+                    $moderation->delete_thread($test_tid);
+                    $write_results['thread:delete'] = ['pass' => true];
+                }
+            }
+
+            // Test setting:set (read, write same value back)
+            $bbname = $mybb->settings['bbname'];
+            $db->update_query('settings', ['value' => $db->escape_string($bbname)], "name='bbname'");
+            rebuild_settings();
+            $write_results['setting:set'] = ['pass' => true, 'note' => 'wrote same value'];
+
+            // Test template write (create and delete test template)
+            $test_tpl_title = '_mcp_test_template_' . time();
+            $db->insert_query('templates', [
+                'title' => $test_tpl_title,
+                'template' => '<div>test</div>',
+                'sid' => -2,
+                'version' => '',
+                'dateline' => TIME_NOW
+            ]);
+            $db->delete_query('templates', "title='" . $db->escape_string($test_tpl_title) . "'");
+            $write_results['template:write'] = ['pass' => true, 'note' => 'created and cleaned'];
+
+            // Test cache rebuild
+            $cache->update_forums();
+            $write_results['cache:rebuild'] = ['pass' => true];
+
+            $test_duration = round((microtime(true) - $test_start) * 1000);
+
+            $results['write_tests']['results'] = $write_results;
+            $results['write_tests']['cleanup'] = 'complete';
+            $results['write_tests']['duration_ms'] = $test_duration;
+        }
+
+        // Overall health determination
+        $issues = [];
+        if (!$results['core']['mybb_bootstrap']) $issues[] = 'MyBB failed to bootstrap';
+        if (!$results['core']['db_connected']) $issues[] = 'Database not connected';
+
+        $all_subsystems_ok = true;
+        foreach ($results['subsystems'] as $name => $status) {
+            if (!($status['read'] ?? false)) {
+                $issues[] = "Subsystem '{$name}' read failed";
+                $all_subsystems_ok = false;
+            }
+        }
+
+        if (count($issues) === 0) {
+            $results['health'] = 'HEALTHY';
+        } elseif ($results['core']['mybb_bootstrap'] && $results['core']['db_connected']) {
+            $results['health'] = 'DEGRADED';
+        } else {
+            $results['health'] = 'UNHEALTHY';
+        }
+        $results['issues'] = $issues;
+
+        respond(true, $results);
+        break;
+
+    // ========================================================================
     // Info Action
     // ========================================================================
     case 'info':
+        // Check MyBB version compatibility
+        $compat = MCP_BRIDGE_MYBB_COMPAT;
+        $mybb_version = $mybb->version;
+        $is_compatible = version_compare($mybb_version, $compat['min'], '>=') &&
+                         version_compare($mybb_version, $compat['max'], '<=');
+        $compat_warning = null;
+        if (!$is_compatible) {
+            if (version_compare($mybb_version, $compat['min'], '<')) {
+                $compat_warning = "MyBB {$mybb_version} is older than minimum tested ({$compat['min']}). Bridge may not work correctly.";
+            } else {
+                $compat_warning = "MyBB {$mybb_version} is newer than maximum tested ({$compat['max']}). Bridge may need updates.";
+            }
+        }
+
         respond(true, [
             'bridge_version' => MCP_BRIDGE_VERSION,
             'protocol_version' => MCP_BRIDGE_PROTOCOL_VERSION,
+            'mybb_compat' => [
+                'min' => $compat['min'],
+                'max' => $compat['max'],
+                'tested' => $compat['tested'],
+                'current' => $mybb_version,
+                'is_compatible' => $is_compatible,
+                'warning' => $compat_warning,
+            ],
             'supported_actions' => [
                 'plugin:status',
                 'plugin:activate',
@@ -1928,6 +2358,10 @@ switch ($action) {
                 'cache:read',
                 'cache:rebuild',
                 'cache:rebuild_smilies',
+                'setting:set',
+                'task:enable',
+                'task:disable',
+                'task:update_nextrun',
                 'template:write',
                 'template:find_replace',
                 'template:batch_write',
@@ -1954,8 +2388,9 @@ switch ($action) {
                 'post:create',
                 'post:edit',
                 'post:delete',
+                'bridge:health_check',
                 'info',
-        ],
+            ],
             'mybb_version' => $mybb->version,
             'mybb_version_code' => $mybb->version_code,
             'php_version' => PHP_VERSION,

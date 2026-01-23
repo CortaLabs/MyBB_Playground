@@ -9,6 +9,12 @@ A continuously updated collection of discoveries, gotchas, tips, and hard-won kn
 
 ---
 
+## Quick Rules
+
+**When adding MCP tools:** Update `EXPECTED_TOOL_COUNT` in `tools_registry.py` or the server won't start.
+
+---
+
 ## Plugin Development
 
 ### Template Updates Require Full Reinstall
@@ -344,6 +350,146 @@ Configuration options might appear implemented but not actually work.
 - Config values silently ignored
 
 **Prevention:** Trace config from loading → component initialization → actual usage. Test that the config actually affects behavior.
+
+---
+
+## MyBB Template System (CRITICAL UNDERSTANDING)
+
+### How Standard MyBB Plugins Handle Templates
+**Date:** 2026-01-22
+**Context:** Understanding template lifecycle for SPEC_01
+
+**Standard MyBB approach:** Templates are **embedded as PHP strings** in `_activate()` and inserted into the database:
+
+```php
+function myplugin_activate() {
+    global $db;
+
+    $templates = array(
+        'myplugin_page' => '<div class="page">{$content}</div>',
+        'myplugin_row' => '<tr><td>{$data}</td></tr>'
+    );
+
+    foreach($templates as $title => $template) {
+        $db->insert_query('templates', array(
+            'title' => $title,
+            'template' => $db->escape_string($template),
+            'sid' => -2,  // Master template
+            'version' => '',
+            'dateline' => TIME_NOW
+        ));
+    }
+}
+
+function myplugin_deactivate() {
+    global $db;
+    $db->delete_query('templates', "title LIKE 'myplugin_%'");
+}
+```
+
+**Key points:**
+- Templates live in PHP code as strings
+- Inserted to `mybb_templates` table on activate
+- Deleted from DB on deactivate
+- `sid = -2` means master template (base for all themes)
+
+---
+
+### How MyBB Playground Plugins Handle Templates
+**Date:** 2026-01-22
+**Context:** Understanding our disk-based workflow
+
+**Playground approach:** Templates live as .html files in the plugin folder. The **plugin itself** reads them during `_activate()`:
+
+```
+inc/plugins/my_plugin/
+├── my_plugin.php
+└── templates/
+    ├── my_plugin_page.html
+    └── my_plugin_row.html
+```
+
+```php
+// In the plugin's own _activate() function:
+function my_plugin_activate() {
+    global $db;
+
+    $template_dir = MYBB_ROOT . 'inc/plugins/my_plugin/templates/';
+    foreach (glob($template_dir . '*.html') as $file) {
+        $title = pathinfo($file, PATHINFO_FILENAME);
+        $content = file_get_contents($file);
+        $db->insert_query('templates', array(
+            'title' => $title,
+            'template' => $db->escape_string($content),
+            'sid' => -2,
+            'dateline' => TIME_NOW
+        ));
+    }
+}
+```
+
+**Key point:** The plugin reads its own template files. No special MCP magic. Standard MyBB plugin behavior, just loading from files instead of embedded strings.
+
+---
+
+### Disk Sync System (Separate from Plugin Templates)
+**Date:** 2026-01-22
+**Context:** Understanding the two template workflows
+
+The **disk sync system** (`mybb_sync/`) is for editing **core/theme templates**, NOT plugin templates:
+
+```
+mybb_sync/
+├── template_sets/
+│   └── Default Templates/
+│       └── header.html      ← Core MyBB templates
+└── themes/
+    └── Default/
+        └── global.css       ← Theme stylesheets
+```
+
+- `mybb_sync_export_templates()` exports core templates to disk
+- `mybb_sync_start_watcher()` watches for changes and syncs to DB
+- This is for editing templates that already exist in MyBB
+
+**Plugin templates** live in the plugin folder and are handled by the plugin itself.
+
+---
+
+### Workspace Structure Mirrors MyBB
+**Date:** 2026-01-22
+**Context:** Plugin import/export planning
+
+The workspace structure should **mirror the deployed MyBB structure** so deployment is just copying:
+
+```
+plugin_manager/plugins/public/my_plugin/    # Isolated workspace
+├── meta.json                                # Playground metadata
+├── inc/
+│   ├── plugins/
+│   │   └── my_plugin/                       # Plugin folder
+│   │       ├── my_plugin.php                # Main file
+│   │       ├── src/                         # Classes (optional)
+│   │       └── templates/                   # OUR disk templates
+│   │           └── my_plugin_page.html
+│   ├── languages/
+│   │   └── english/
+│   │       └── my_plugin.lang.php
+│   └── tasks/
+│       └── my_plugin_task.php
+├── jscripts/
+│   └── my_plugin.js
+└── admin/
+    └── modules/
+        └── tools/
+            └── my_plugin_admin.php
+```
+
+**Deploy = copy workspace contents to TestForum** (minus meta.json)
+**Import = copy external plugin into workspace + generate meta.json**
+**Export = zip contents with Upload/ wrapper**
+
+No transformation needed because structure already matches.
 
 ---
 

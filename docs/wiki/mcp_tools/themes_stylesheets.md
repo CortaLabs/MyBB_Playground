@@ -123,6 +123,39 @@ Create a new theme called "my_custom_theme" based on the default theme
 
 ---
 
+### mybb_delete_theme
+
+Permanently delete a theme from workspace and database. Archives by default (can be recovered). Use force=True for installed themes.
+
+**Parameters:**
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `codename` | string | **Yes** | - | Theme codename to delete |
+| `archive` | boolean | No | `True` | Archive workspace instead of deleting (can be recovered) |
+| `force` | boolean | No | `False` | Force deletion of installed themes (will uninstall first) |
+
+**Returns:**
+Confirmation message with deletion details and archive location (if archived).
+
+**Behavior:**
+- By default, archives the theme workspace instead of permanently deleting
+- Archived themes can be recovered from the archive directory
+- If `archive=False`, permanently deletes theme files
+- If theme is currently installed and `force=True`, will uninstall before deleting
+- Fails if theme is installed and `force=False` (safety check)
+
+**Example:**
+```
+Delete and archive "my_old_theme" (can be recovered later)
+→ Theme archived to plugin_manager/themes/archived/
+
+Force delete installed theme "test_theme" permanently
+→ Uninstalls theme first, then permanently deletes workspace
+```
+
+---
+
 ### mybb_sync_export_stylesheets
 
 Export all stylesheets from a theme to disk files for editing.

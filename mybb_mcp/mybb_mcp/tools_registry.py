@@ -201,6 +201,19 @@ THEME_TOOLS = [
             "required": ["codename", "name"]
         }
     ),
+    Tool(
+        name="mybb_delete_theme",
+        description="Permanently delete a theme from workspace and database. Archives by default (can be recovered). Use force=True for installed themes.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "codename": {"type": "string", "description": "Theme codename to delete."},
+                "archive": {"type": "boolean", "description": "Archive workspace instead of deleting (default: True).", "default": True},
+                "force": {"type": "boolean", "description": "Force deletion of installed themes (will uninstall first).", "default": False},
+            },
+            "required": ["codename"],
+        },
+    ),
 ]
 
 
@@ -252,19 +265,6 @@ PLUGIN_TOOLS = [
                 "codename": {"type": "string", "description": "Plugin codename to delete."},
                 "archive": {"type": "boolean", "description": "Archive workspace instead of deleting (default: True).", "default": True},
                 "force": {"type": "boolean", "description": "Force deletion of installed plugins (will uninstall first).", "default": False},
-            },
-            "required": ["codename"],
-        },
-    ),
-    Tool(
-        name="mybb_delete_theme",
-        description="Permanently delete a theme from workspace and database. Archives by default (can be recovered). Use force=True for installed themes.",
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "codename": {"type": "string", "description": "Theme codename to delete."},
-                "archive": {"type": "boolean", "description": "Archive workspace instead of deleting (default: True).", "default": True},
-                "force": {"type": "boolean", "description": "Force deletion of installed themes (will uninstall first).", "default": False},
             },
             "required": ["codename"],
         },
@@ -569,11 +569,12 @@ CONTENT_TOOLS = [
     ),
     Tool(
         name="mybb_forum_delete",
-        description="Delete a forum. WARNING: Does not handle content migration. Ensure forum is empty first.",
+        description="Delete a forum. By default blocks if forum has content. Use force_content_deletion=True to delete content via MyBB Moderation class.",
         inputSchema={
             "type": "object",
             "properties": {
                 "fid": {"type": "integer", "description": "Forum ID"},
+                "force_content_deletion": {"type": "boolean", "description": "If True, delete all threads/posts via Moderation class before deleting forum. Default: False (blocks if content exists)."},
             },
             "required": ["fid"],
         },
@@ -1151,6 +1152,27 @@ ADMIN_TOOLS = [
         description="Get comprehensive board statistics including forums, users, threads, posts, latest post, and most active forum.",
         inputSchema={"type": "object", "properties": {}, "required": []},
     ),
+    Tool(
+        name="mybb_bridge_health_check",
+        description="Run bridge health check / smoke test. Quick mode does read-only probes, full mode tests write operations with cleanup.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "mode": {
+                    "type": "string",
+                    "description": "Test mode: 'quick' (read-only, default) or 'full' (includes write tests)",
+                    "enum": ["quick", "full"],
+                    "default": "quick"
+                },
+                "format": {
+                    "type": "string",
+                    "description": "Output format: 'summary' (default) or 'json'",
+                    "enum": ["summary", "json"],
+                    "default": "summary"
+                }
+            }
+        },
+    ),
 ]
 
 
@@ -1400,5 +1422,5 @@ ALL_TOOLS = (
 )
 
 # Tool count verification
-EXPECTED_TOOL_COUNT = 103  # Was 99, added 3 language validation tools
+EXPECTED_TOOL_COUNT = 104  # Was 103, added mybb_bridge_health_check
 assert len(ALL_TOOLS) == EXPECTED_TOOL_COUNT, f"Expected {EXPECTED_TOOL_COUNT} tools, got {len(ALL_TOOLS)}"
