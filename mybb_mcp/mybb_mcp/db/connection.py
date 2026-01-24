@@ -4,15 +4,47 @@ from contextlib import contextmanager
 from typing import Any, Generator
 import time
 import logging
+import threading
 import mysql.connector
 from mysql.connector import MySQLConnection
 from mysql.connector.cursor import MySQLCursor
-from mysql.connector.pooling import MySQLConnectionPool
+from mysql.connector.pooling import MySQLConnectionPool, PoolError
 from mysql.connector import Error as MySQLError
 
 from ..config import DatabaseConfig
 
 logger = logging.getLogger(__name__)
+
+# Pool acquisition timeout in seconds
+POOL_ACQUIRE_TIMEOUT = 10
+
+# Global connection tracking for debugging leaks
+_active_connections: dict[int, dict] = {}
+_connection_lock = threading.Lock()
+
+
+def _track_connection_acquired(conn_id: int, caller: str):
+    """Track when a connection is acquired."""
+    with _connection_lock:
+        _active_connections[conn_id] = {
+            "acquired_at": time.time(),
+            "caller": caller,
+            "thread": threading.current_thread().name
+        }
+        if len(_active_connections) > 3:  # Warn if holding many connections
+            logger.warning(f"High connection count: {len(_active_connections)} active. "
+                          f"Callers: {[v['caller'] for v in _active_connections.values()]}")
+
+
+def _track_connection_released(conn_id: int):
+    """Track when a connection is released."""
+    with _connection_lock:
+        if conn_id in _active_connections:
+            held_time = time.time() - _active_connections[conn_id]["acquired_at"]
+            if held_time > 5:  # Warn if held for more than 5 seconds
+                logger.warning(f"Connection {conn_id} held for {held_time:.1f}s by "
+                              f"{_active_connections[conn_id]['caller']}")
+            del _active_connections[conn_id]
 
 
 class MyBBDatabase:
@@ -74,6 +106,34 @@ class MyBBDatabase:
                 raise
         return self._pool
 
+    def _get_connection_with_timeout(self, pool: MySQLConnectionPool, timeout: float) -> MySQLConnection:
+        """Get connection from pool with timeout to prevent indefinite blocking.
+
+        NOTE: Timeout is enforced by the pool itself via connection_timeout parameter
+        set during pool initialization. We don't use ThreadPoolExecutor here to avoid
+        nested thread pool deadlocks when this is called from asyncio.to_thread().
+
+        Args:
+            pool: The connection pool
+            timeout: Maximum seconds to wait (informational only - pool handles timeout)
+
+        Returns:
+            MySQL connection from pool
+
+        Raises:
+            MySQLError: If timeout expires or pool error occurs
+        """
+        try:
+            # Direct call - no ThreadPoolExecutor wrapper to avoid nested thread pool deadlock
+            # The pool's connection_timeout parameter (set in __init__) handles timeouts
+            conn = pool.get_connection()
+            return conn
+        except PoolError as e:
+            # Pool exhaustion or timeout
+            logger.error(f"Pool error getting connection: {e}")
+            raise MySQLError(f"Connection pool error: {e}. "
+                           f"Consider increasing MYBB_DB_POOL_SIZE (current: {self._pool_size})")
+
     def _connect_with_retry(self) -> MySQLConnection:
         """Establish database connection with retry logic and exponential backoff."""
         last_error = None
@@ -82,7 +142,7 @@ class MyBBDatabase:
             try:
                 if self._use_pooling:
                     pool = self._init_pool()
-                    conn = pool.get_connection()
+                    conn = self._get_connection_with_timeout(pool, POOL_ACQUIRE_TIMEOUT)
                     logger.debug(f"Got connection from pool (attempt {attempt + 1})")
                 else:
                     config = self._get_connection_config()
@@ -184,7 +244,15 @@ class MyBBDatabase:
         Yields:
             MySQLCursor: Database cursor for executing queries
         """
+        import traceback
+        caller = ''.join(traceback.format_stack()[-4:-2])  # Get caller info
+
         conn = self.connect()
+        conn_id = id(conn)
+
+        if self._use_pooling:
+            _track_connection_acquired(conn_id, caller[:200])  # Truncate long traces
+
         cursor = conn.cursor(dictionary=dictionary)
         try:
             yield cursor
@@ -196,6 +264,7 @@ class MyBBDatabase:
             cursor.close()
             # Return pooled connections to the pool
             if self._use_pooling:
+                _track_connection_released(conn_id)
                 try:
                     conn.close()
                 except MySQLError as e:

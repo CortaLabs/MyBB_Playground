@@ -27,14 +27,11 @@ class SyncEventHandler(FileSystemEventHandler):
     - Atomic writes (temp + rename): triggers on_moved or on_created
 
     Uses debouncing to prevent duplicate syncs when editors fire multiple events.
-    Batches rapid changes together for efficient database transactions.
+    Queues work items directly to asyncio queue for async processing.
     """
 
     # Debounce window in seconds - ignore duplicate events within this time
     DEBOUNCE_SECONDS = 0.1
-
-    # Batch collection window - collect changes for this long before flushing
-    BATCH_WINDOW_SECONDS = 0.1
 
     def __init__(
         self,
@@ -49,19 +46,17 @@ class SyncEventHandler(FileSystemEventHandler):
         """Initialize sync event handler.
 
         Args:
-            template_importer: TemplateImporter instance for template updates
-            stylesheet_importer: StylesheetImporter instance for stylesheet updates
-            plugin_template_importer: PluginTemplateImporter instance for plugin template updates
-            cache_refresher: CacheRefresher instance for cache refresh
+            template_importer: (Unused, kept for compatibility with FileWatcher)
+            stylesheet_importer: (Unused, kept for compatibility with FileWatcher)
+            plugin_template_importer: (Unused, kept for compatibility with FileWatcher)
+            cache_refresher: (Unused, kept for compatibility with FileWatcher)
             router: PathRouter instance for path parsing
             work_queue: Asyncio queue for thread-safe work submission
             watcher: FileWatcher instance for accessing workspace_root
         """
         super().__init__()
-        self.template_importer = template_importer
-        self.stylesheet_importer = stylesheet_importer
-        self.plugin_template_importer = plugin_template_importer
-        self.cache_refresher = cache_refresher
+        # Note: importer params kept in signature for FileWatcher compatibility
+        # but not stored - handler only queues work, doesn't process it
         self.router = router
         self.work_queue = work_queue
         self.watcher = watcher
@@ -69,10 +64,6 @@ class SyncEventHandler(FileSystemEventHandler):
         # Debouncing: track last sync time per file
         self._last_sync: dict[str, float] = {}
         self._lock = Lock()
-
-        # Batching: collect work items and flush after window
-        self._pending_batch: Dict[str, dict] = {}
-        self._batch_timer: Optional[asyncio.TimerHandle] = None
 
     def _should_process(self, path: Path) -> bool:
         """Check if file should be processed (debounce check).
@@ -92,63 +83,6 @@ class SyncEventHandler(FileSystemEventHandler):
                 return False
             self._last_sync[path_str] = now
             return True
-
-    def _queue_for_batch(self, work_item: dict) -> None:
-        """Queue a work item for batching.
-
-        Collects work items and schedules batch flush after BATCH_WINDOW_SECONDS.
-        Multiple changes to the same file within the window get deduplicated.
-
-        Args:
-            work_item: Work item dictionary with type, names, and content
-        """
-        # Create deduplication key based on work item type and target
-        if work_item["type"] == "template":
-            key = f"template:{work_item['set_name']}:{work_item['template_name']}"
-        elif work_item["type"] == "stylesheet":
-            key = f"stylesheet:{work_item['theme_name']}:{work_item['stylesheet_name']}"
-        elif work_item["type"] == "plugin_template":
-            key = f"plugin_template:{work_item['codename']}:{work_item['template_name']}"
-        else:
-            # Unknown type, queue directly without batching
-            self.work_queue.put_nowait(work_item)
-            return
-
-        # Add to pending batch (replaces previous version if same key)
-        with self._lock:
-            self._pending_batch[key] = work_item
-
-            # Cancel existing timer if present
-            if self._batch_timer is not None:
-                self._batch_timer.cancel()
-
-            # Schedule batch flush
-            loop = asyncio.get_event_loop()
-            self._batch_timer = loop.call_later(
-                self.BATCH_WINDOW_SECONDS,
-                self._flush_batch
-            )
-
-    def _flush_batch(self) -> None:
-        """Flush pending batch to work queue.
-
-        Queues all collected work items as a single batch operation.
-        Called by timer after BATCH_WINDOW_SECONDS of inactivity.
-        """
-        with self._lock:
-            if not self._pending_batch:
-                return
-
-            # Create batch work item
-            batch_items = list(self._pending_batch.values())
-            self._pending_batch.clear()
-            self._batch_timer = None
-
-            # Queue batch for async processing
-            self.work_queue.put_nowait({
-                "type": "batch",
-                "items": batch_items
-            })
 
     def _handle_file_change(self, path: Path) -> None:
         """Route file change to appropriate handler.
@@ -239,8 +173,8 @@ class SyncEventHandler(FileSystemEventHandler):
             # Read file content
             content = path.read_text(encoding='utf-8')
 
-            # Queue work for batch processing (with deduplication)
-            self._queue_for_batch({
+            # Queue work item directly to async processor
+            self.work_queue.put_nowait({
                 "type": "template",
                 "set_name": parsed.set_name,
                 "template_name": parsed.template_name,
@@ -276,8 +210,8 @@ class SyncEventHandler(FileSystemEventHandler):
             # Read file content
             content = path.read_text(encoding='utf-8')
 
-            # Queue work for batch processing (with deduplication)
-            self._queue_for_batch({
+            # Queue work item directly to async processor
+            self.work_queue.put_nowait({
                 "type": "stylesheet",
                 "theme_name": parsed.theme_name,
                 "stylesheet_name": parsed.stylesheet_name,
@@ -327,9 +261,9 @@ class SyncEventHandler(FileSystemEventHandler):
             # Read content
             content = path.read_text(encoding='utf-8')
 
-            # Queue work for batch processing (with deduplication)
+            # Queue work item directly to async processor
             # Include theme_name from parsed path (can be None for default templates)
-            self._queue_for_batch({
+            self.work_queue.put_nowait({
                 "type": "plugin_template",
                 "codename": parsed.project_name,
                 "template_name": parsed.template_name,
@@ -349,6 +283,10 @@ class SyncEventHandler(FileSystemEventHandler):
 
 class FileWatcher:
     """Watches sync directory for file changes."""
+
+    # Batching configuration
+    BATCH_WINDOW_SECONDS = 0.1
+    MAX_BATCH_SIZE = 50
 
     def __init__(
         self,
@@ -395,137 +333,127 @@ class FileWatcher:
         # Background task for processing queued work
         self._processor_task: Optional[asyncio.Task] = None
 
-        # Pause mechanism for export operations
-        self._paused = False
-        self._pause_lock = Lock()
+    def _make_dedup_key(self, item: dict) -> str:
+        """Create a deduplication key for a work item.
 
-    def pause(self) -> None:
-        """Pause watcher event processing. Idempotent.
+        Args:
+            item: Work item dictionary
 
-        Used during export operations to prevent race conditions.
-        Queued events will wait until resume() is called.
+        Returns:
+            String key that uniquely identifies this work item
         """
-        with self._pause_lock:
-            if self._paused:
-                return
-            self._paused = True
-            print("[disk-sync] Watcher paused")
+        if item["type"] == "template":
+            return f"template:{item['set_name']}:{item['template_name']}"
+        elif item["type"] == "stylesheet":
+            return f"stylesheet:{item['theme_name']}:{item['stylesheet_name']}"
+        elif item["type"] == "plugin_template":
+            theme = item.get('theme_name', 'master')
+            return f"plugin_template:{item['codename']}:{item['template_name']}:{theme}"
+        else:
+            # Fallback for unknown types
+            return f"{item['type']}:{hash(str(item))}"
 
-    def resume(self) -> None:
-        """Resume watcher event processing. Idempotent.
+    async def _process_batch(self, items: list[dict]) -> None:
+        """Process a batch of work items.
 
-        Allows queued events to be processed after exports complete.
+        Args:
+            items: List of work item dictionaries to process
         """
-        with self._pause_lock:
-            if not self._paused:
-                return
-            self._paused = False
-            print("[disk-sync] Watcher resumed")
+        print(f"[disk-sync] Processing batch of {len(items)} items")
 
-    async def _process_work_queue(self) -> None:
-        """Background task that processes queued file changes.
-
-        Runs in the main asyncio event loop and processes work items
-        queued by watchdog worker threads.
-        """
-        while True:
+        for item in items:
             try:
-                # Get work item from queue
-                work_item = await self.work_queue.get()
-
-                # Wait while paused (e.g., during export operations)
-                while self._paused:
-                    await asyncio.sleep(0.1)
-
-                # Process based on type
-                if work_item["type"] == "batch":
-                    # Process all items in the batch
-                    items = work_item["items"]
-                    print(f"[disk-sync] Processing batch of {len(items)} items")
-
-                    for item in items:
-                        if item["type"] == "template":
-                            await self.template_importer.import_template(
-                                item["set_name"],
-                                item["template_name"],
-                                item["content"]
-                            )
-                            print(f"[disk-sync] Template synced: {item['template_name']}")
-
-                        elif item["type"] == "stylesheet":
-                            await self.stylesheet_importer.import_stylesheet(
-                                item["theme_name"],
-                                item["stylesheet_name"],
-                                item["content"]
-                            )
-                            await self.cache_refresher.refresh_stylesheet(
-                                item["theme_name"],
-                                item["stylesheet_name"]
-                            )
-                            print(f"[disk-sync] Stylesheet synced: {item['stylesheet_name']}")
-
-                        elif item["type"] == "plugin_template":
-                            await self.plugin_template_importer.import_template(
-                                item["codename"],
-                                item["template_name"],
-                                item["content"],
-                                item.get("theme_name")  # Optional theme_name from work item
-                            )
-                            # Enhanced logging for theme-specific templates
-                            if item.get("theme_name"):
-                                print(f"[disk-sync] Plugin template synced: {item['codename']}_{item['template_name']} (theme: {item['theme_name']})")
-                            else:
-                                print(f"[disk-sync] Plugin template synced: {item['codename']}_{item['template_name']}")
-
-                elif work_item["type"] == "template":
+                if item["type"] == "template":
                     await self.template_importer.import_template(
-                        work_item["set_name"],
-                        work_item["template_name"],
-                        work_item["content"]
+                        item["set_name"],
+                        item["template_name"],
+                        item["content"]
                     )
-                    print(f"[disk-sync] Template synced: {work_item['template_name']}")
+                    print(f"[disk-sync] Template synced: {item['template_name']}")
 
-                elif work_item["type"] == "stylesheet":
+                elif item["type"] == "stylesheet":
                     await self.stylesheet_importer.import_stylesheet(
-                        work_item["theme_name"],
-                        work_item["stylesheet_name"],
-                        work_item["content"]
+                        item["theme_name"],
+                        item["stylesheet_name"],
+                        item["content"]
                     )
                     await self.cache_refresher.refresh_stylesheet(
-                        work_item["theme_name"],
-                        work_item["stylesheet_name"]
+                        item["theme_name"],
+                        item["stylesheet_name"]
                     )
-                    print(f"[disk-sync] Stylesheet synced: {work_item['stylesheet_name']}")
+                    print(f"[disk-sync] Stylesheet synced: {item['stylesheet_name']}")
 
-                elif work_item["type"] == "plugin_template":
+                elif item["type"] == "plugin_template":
                     await self.plugin_template_importer.import_template(
-                        work_item["codename"],
-                        work_item["template_name"],
-                        work_item["content"],
-                        work_item.get("theme_name")  # Optional theme_name from work item
+                        item["codename"],
+                        item["template_name"],
+                        item["content"],
+                        item.get("theme_name")
                     )
                     # Enhanced logging for theme-specific templates
-                    if work_item.get("theme_name"):
-                        print(f"[disk-sync] Plugin template synced: {work_item['codename']}_{work_item['template_name']} (theme: {work_item['theme_name']})")
+                    if item.get("theme_name"):
+                        print(f"[disk-sync] Plugin template synced: {item['codename']}_{item['template_name']} (theme: {item['theme_name']})")
                     else:
-                        print(f"[disk-sync] Plugin template synced: {work_item['codename']}_{work_item['template_name']}")
+                        print(f"[disk-sync] Plugin template synced: {item['codename']}_{item['template_name']}")
 
-                # Mark task as done
+            except Exception as e:
+                # Log error and continue processing remaining items
+                print(f"[disk-sync] Error processing {item.get('type', 'unknown')} item: {e}")
+
+    async def _process_work_queue(self) -> None:
+        """Background task that processes queued file changes with batching.
+
+        Collects items within BATCH_WINDOW_SECONDS using asyncio.wait_for(),
+        deduplicates by key, and processes in batches up to MAX_BATCH_SIZE.
+        """
+        pending: dict[str, dict] = {}
+
+        while True:
+            try:
+                # Wait for first item to start a new batch
+                item = await self.work_queue.get()
                 self.work_queue.task_done()
+                pending[self._make_dedup_key(item)] = item
+
+                # Collect more items within the batch window
+                deadline = time.monotonic() + self.BATCH_WINDOW_SECONDS
+                while len(pending) < self.MAX_BATCH_SIZE:
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        break
+
+                    try:
+                        item = await asyncio.wait_for(
+                            self.work_queue.get(),
+                            timeout=remaining
+                        )
+                        self.work_queue.task_done()
+                        pending[self._make_dedup_key(item)] = item
+                    except asyncio.TimeoutError:
+                        # Batch window expired, process what we have
+                        break
+
+                # Process the collected batch
+                await self._process_batch(list(pending.values()))
+                pending.clear()
 
             except asyncio.CancelledError:
                 # Task cancelled during shutdown
                 break
             except Exception as e:
-                print(f"[disk-sync] Queue processor error: {e}")
-                # Mark task as done even on error to prevent queue blocking
-                self.work_queue.task_done()
+                print(f"[disk-sync] Processor error: {e}")
+                # Clear pending batch on error to avoid getting stuck
+                pending.clear()
 
     def start(self) -> None:
         """Start watching the sync directory and optional workspace."""
         # Start background processor task
         if self._processor_task is None or self._processor_task.done():
             self._processor_task = asyncio.create_task(self._process_work_queue())
+
+        # Create new observer if previous was stopped (observers cannot be restarted)
+        if not self.observer.is_alive():
+            self.observer = Observer()
 
         # Start file system observer for sync directory
         self.observer.schedule(self.handler, str(self.sync_root), recursive=True)
@@ -537,15 +465,20 @@ class FileWatcher:
 
         self.observer.start()
 
-    def stop(self) -> None:
-        """Stop watching the sync directory."""
+    async def stop(self) -> None:
+        """Stop watching the sync directory and wait for processor to finish."""
         # Stop file system observer
         self.observer.stop()
         self.observer.join()
 
-        # Cancel background processor task
+        # Cancel background processor task and wait for it
         if self._processor_task and not self._processor_task.done():
             self._processor_task.cancel()
+            try:
+                await self._processor_task
+            except asyncio.CancelledError:
+                # Expected when cancelling
+                pass
 
     @property
     def is_running(self) -> bool:

@@ -84,7 +84,7 @@ class DiskSyncService:
     async def export_template_set(self, set_name: str) -> dict[str, Any]:
         """Export all templates from a template set to disk.
 
-        Pauses watcher during export to prevent race conditions.
+        Stops watcher during export to prevent race conditions.
 
         Args:
             set_name: Template set name (e.g., "Default Templates")
@@ -95,19 +95,19 @@ class DiskSyncService:
         Raises:
             ValueError: If template set not found
         """
+        was_running = self.watcher.is_running
+        if was_running:
+            await self.watcher.stop()
         try:
-            self.pause_watcher()
-            result = await self.template_exporter.export_template_set(set_name)
-            # Clear any queued events from our own export
-            self._drain_watcher_queue()
-            return result
+            return await self.template_exporter.export_template_set(set_name)
         finally:
-            self.resume_watcher()
+            if was_running:
+                self.watcher.start()
 
     async def export_theme(self, theme_name: str) -> dict[str, Any]:
         """Export all stylesheets from a theme to disk.
 
-        Pauses watcher during export to prevent race conditions.
+        Stops watcher during export to prevent race conditions.
 
         Args:
             theme_name: Theme name (e.g., "Default")
@@ -118,32 +118,14 @@ class DiskSyncService:
         Raises:
             ValueError: If theme not found
         """
+        was_running = self.watcher.is_running
+        if was_running:
+            await self.watcher.stop()
         try:
-            self.pause_watcher()
-            result = await self.stylesheet_exporter.export_theme_stylesheets(theme_name)
-            # Clear any queued events from our own export
-            self._drain_watcher_queue()
-            return result
+            return await self.stylesheet_exporter.export_theme_stylesheets(theme_name)
         finally:
-            self.resume_watcher()
-
-    def _drain_watcher_queue(self) -> int:
-        """Clear queued watcher events (after export to prevent re-import).
-
-        Returns:
-            Number of events drained
-        """
-        drained = 0
-        while not self.watcher.work_queue.empty():
-            try:
-                self.watcher.work_queue.get_nowait()
-                self.watcher.work_queue.task_done()
-                drained += 1
-            except Exception:
-                break
-        if drained > 0:
-            print(f"[disk-sync] Drained {drained} queued events after export")
-        return drained
+            if was_running:
+                self.watcher.start()
 
     def start_watcher(self) -> bool:
         """Start the file watcher for automatic sync.
@@ -171,20 +153,6 @@ class DiskSyncService:
 
         self.watcher.stop()
         return True
-
-    def pause_watcher(self) -> None:
-        """Pause watcher event processing.
-
-        Used during export operations to prevent race conditions.
-        """
-        self.watcher.pause()
-
-    def resume_watcher(self) -> None:
-        """Resume watcher event processing.
-
-        Should be called after export operations complete.
-        """
-        self.watcher.resume()
 
     def get_status(self) -> dict[str, Any]:
         """Get current sync service status.

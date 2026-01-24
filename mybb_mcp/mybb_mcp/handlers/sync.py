@@ -31,10 +31,7 @@ async def handle_sync_export_templates(
         return "Error: set_name is required"
 
     try:
-        # Pause watcher during export to prevent race conditions
-        if sync_service and sync_service.watcher:
-            sync_service.pause_watcher()
-
+        # Note: service.export_template_set() handles watcher stop/start internally
         stats = await sync_service.export_template_set(set_name)
         groups_str = ', '.join(f"{g} ({c})" for g, c in stats['groups'].items())
         return (
@@ -46,10 +43,6 @@ async def handle_sync_export_templates(
         )
     except ValueError as e:
         return f"Error: {e}"
-    finally:
-        # Always resume watcher, even on error
-        if sync_service and sync_service.watcher:
-            sync_service.resume_watcher()
 
 
 async def handle_sync_export_stylesheets(
@@ -71,10 +64,7 @@ async def handle_sync_export_stylesheets(
         return "Error: theme_name is required"
 
     try:
-        # Pause watcher during export to prevent race conditions
-        if sync_service and sync_service.watcher:
-            sync_service.pause_watcher()
-
+        # Note: service.export_theme() handles watcher pause/resume internally
         stats = await sync_service.export_theme(theme_name)
         return (
             f"# Stylesheets Exported\n\n"
@@ -84,10 +74,6 @@ async def handle_sync_export_stylesheets(
         )
     except ValueError as e:
         return f"Error: {e}"
-    finally:
-        # Always resume watcher, even on error
-        if sync_service and sync_service.watcher:
-            sync_service.resume_watcher()
 
 
 async def handle_sync_start_watcher(

@@ -3,6 +3,7 @@
 Handles bidirectional synchronization of MyBB templates between database and disk files.
 """
 
+import asyncio
 import logging
 import os
 import time
@@ -55,16 +56,16 @@ class TemplateExporter:
         Raises:
             ValueError: If template set not found
         """
-        # Get template set ID
-        template_set = self.db.get_template_set_by_name(set_name)
+        # Get template set ID (run blocking DB call in thread pool to avoid blocking event loop)
+        template_set = await asyncio.to_thread(self.db.get_template_set_by_name, set_name)
         if not template_set:
             raise ValueError(f"Template set not found: {set_name}")
 
         sid = template_set['sid']
 
-        # Fetch all templates for this set (both master and custom)
+        # Fetch all templates for this set (run blocking DB call in thread pool)
         # Query pattern from research: WHERE sid IN (-2, ?)
-        templates = self._fetch_templates(sid)
+        templates = await asyncio.to_thread(self._fetch_templates, sid)
 
         # Export templates organized by group
         stats = await self._export_templates_by_group(set_name, templates, sid)
