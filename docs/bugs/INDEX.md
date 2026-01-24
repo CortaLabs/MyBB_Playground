@@ -1,16 +1,19 @@
 # Bug Reports Index
 
-*Last Updated: 2026-01-21 05:45:11 UTC*
+*Last Updated: 2026-01-23 08:46:58 UTC*
 
 This directory contains bug reports generated during development and testing.
 
 ## Bug Statistics
 
-- **Total Reports:** 14
+- **Total Reports:** 17
 - **Categories:** 6
 
 ## Recent Bug Reports
 
+- **[infrastructure/2026-01-23_nested_threadpool_deadlock](infrastructure/2026-01-23_nested_threadpool_deadlock/report.md)** - 2026-01-23 08:46
+- **[infrastructure/2026-01-23_export_templates_timeout](infrastructure/2026-01-23_export_templates_timeout/report.md)** - 2026-01-23 07:22
+- **[infrastructure/2026-01-23_uninstaller_core_deletion](infrastructure/2026-01-23_uninstaller_core_deletion/report.md)** - 2026-01-23 06:37
 - **[ui/2026-01-21_usergroup_permissions_not_appearing](ui/2026-01-21_usergroup_permissions_not_appearing/report.md)** - 2026-01-21 05:45
 - **[ui/2026-01-21_preview_form_missing_options](ui/2026-01-21_preview_form_missing_options/report.md)** - 2026-01-21 01:51
 - **[language/2026-01-21_codes_campaigns_lang_loading](language/2026-01-21_codes_campaigns_lang_loading/report.md)** - 2026-01-20 22:53
@@ -34,7 +37,10 @@ This directory contains bug reports generated during development and testing.
 - [2026-01-21_spam_logs_schema_mismatch](database/2026-01-21_spam_logs_schema_mismatch/report.md)
 - [2026-01-21_bulk_operations_schema_mismatch](database/2026-01-21_bulk_operations_schema_mismatch/report.md)
 
-### Infrastructure (1 reports)
+### Infrastructure (4 reports)
+- [2026-01-23_nested_threadpool_deadlock](infrastructure/2026-01-23_nested_threadpool_deadlock/report.md)
+- [2026-01-23_export_templates_timeout](infrastructure/2026-01-23_export_templates_timeout/report.md)
+- [2026-01-23_uninstaller_core_deletion](infrastructure/2026-01-23_uninstaller_core_deletion/report.md)
 - [2026-01-19_plugin_db_path_mismatch](infrastructure/2026-01-19_plugin_db_path_mismatch/report.md)
 
 ### Language (2 reports)
@@ -62,7 +68,7 @@ This directory contains bug reports generated during development and testing.
 
 - **Index Location:** `/home/austin/projects/MyBB_Playground/docs/bugs/INDEX.md`
 - **Total Categories:** 6
-- **Last Scan:** 2026-01-21 05:45:11 UTC
+- **Last Scan:** 2026-01-23 08:46:58 UTC
 
 ---
 

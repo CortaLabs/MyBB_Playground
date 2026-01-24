@@ -230,49 +230,64 @@ class PluginPackager:
                 "warnings": []
             }
 
-        # Create ZIP with MyBB-compatible structure
+        # Create ZIP with MyBB Mods standard structure (Upload/ wrapper)
         try:
             with zipfile.ZipFile(output_path, 'w', zipfile.ZIP_DEFLATED) as zf:
-                # Add main plugin PHP file (MyBB-compatible path)
+                # Add main plugin PHP file (inside Upload/)
                 src_php = workspace_path / "inc" / "plugins" / f"{codename}.php"
                 if src_php.exists():
-                    # In ZIP: inc/plugins/{codename}.php (for direct overlay)
-                    zf.write(src_php, f"inc/plugins/{codename}.php")
-                    files_included.append(f"inc/plugins/{codename}.php")
+                    zf.write(src_php, f"Upload/inc/plugins/{codename}.php")
+                    files_included.append(f"Upload/inc/plugins/{codename}.php")
                 else:
                     warnings.append(f"Main plugin file not found: {src_php}")
 
-                # Add language file if exists (MyBB-compatible path)
+                # Add language file if exists (inside Upload/)
                 lang_file = workspace_path / "inc" / "languages" / "english" / f"{codename}.lang.php"
                 if lang_file.exists():
-                    zf.write(lang_file, f"inc/languages/english/{codename}.lang.php")
-                    files_included.append(f"inc/languages/english/{codename}.lang.php")
+                    zf.write(lang_file, f"Upload/inc/languages/english/{codename}.lang.php")
+                    files_included.append(f"Upload/inc/languages/english/{codename}.lang.php")
 
-                # Add jscripts if directory exists
+                # Add admin language file if exists (inside Upload/)
+                admin_lang_file = workspace_path / "inc" / "languages" / "english" / "admin" / f"{codename}.lang.php"
+                if admin_lang_file.exists():
+                    zf.write(admin_lang_file, f"Upload/inc/languages/english/admin/{codename}.lang.php")
+                    files_included.append(f"Upload/inc/languages/english/admin/{codename}.lang.php")
+
+                # Add jscripts if directory exists (inside Upload/)
                 jscripts_dir = workspace_path / "jscripts"
                 if jscripts_dir.exists() and jscripts_dir.is_dir():
                     for js_file in jscripts_dir.rglob("*"):
                         if js_file.is_file():
                             rel_path = js_file.relative_to(workspace_path)
-                            zf.write(js_file, str(rel_path))
-                            files_included.append(str(rel_path))
+                            zip_path = f"Upload/{rel_path}"
+                            zf.write(js_file, zip_path)
+                            files_included.append(zip_path)
 
-                # Add images if directory exists
+                # Add images if directory exists (inside Upload/)
                 images_dir = workspace_path / "images"
                 if images_dir.exists() and images_dir.is_dir():
                     for img_file in images_dir.rglob("*"):
                         if img_file.is_file():
                             rel_path = img_file.relative_to(workspace_path)
-                            zf.write(img_file, str(rel_path))
-                            files_included.append(str(rel_path))
+                            zip_path = f"Upload/{rel_path}"
+                            zf.write(img_file, zip_path)
+                            files_included.append(zip_path)
 
-                # Add README.md if exists
+                # Add templates directory if exists (inside Upload/)
+                templates_dir = workspace_path / "inc" / "plugins" / codename / "templates"
+                if templates_dir.exists() and templates_dir.is_dir():
+                    for tmpl_file in templates_dir.glob("*.html"):
+                        zip_path = f"Upload/inc/plugins/{codename}/templates/{tmpl_file.name}"
+                        zf.write(tmpl_file, zip_path)
+                        files_included.append(zip_path)
+
+                # Add README.md if exists (at ZIP root, NOT inside Upload/)
                 readme = workspace_path / "README.md"
                 if readme.exists():
                     zf.write(readme, "README.md")
                     files_included.append("README.md")
 
-                # Optionally include tests
+                # Optionally include tests (at ZIP root, NOT inside Upload/)
                 if include_tests:
                     tests_dir = workspace_path / "tests"
                     if tests_dir.exists() and tests_dir.is_dir():

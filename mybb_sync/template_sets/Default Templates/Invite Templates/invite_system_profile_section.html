@@ -1,0 +1,44 @@
+<div class="invite-profile-section" style="margin-top: 20px;">
+<table border="0" cellspacing="{$theme['borderwidth']}" cellpadding="{$theme['tablespace']}" class="tborder">
+<thead><tr><td class="thead" colspan="2"><strong>{$lang->invite_profile_title}</strong></td></tr></thead>
+<tbody>
+<if $invited_by_username then>
+<tr>
+    <td class="trow1" width="40%"><strong>{$lang->invite_profile_invited_by}</strong></td>
+    <td class="trow1">
+        <a href="{$invited_by_profile_link}">{$invited_by_username}</a>
+        <if $invited_by_badge then><span class="invite-badge" style="margin-left: 8px; padding: 2px 8px; background: #4caf50; color: white; border-radius: 3px; font-size: 11px;">{$invited_by_badge}</span></if>
+    </td>
+</tr>
+</if>
+<if $show_invite_stats then>
+<tr>
+    <td class="trow2" width="40%"><strong>{$lang->invite_profile_total_invites}</strong></td>
+    <td class="trow2">
+        {$total_invites_count}
+        <if $top_inviter_badge then><span class="invite-badge top-inviter" style="margin-left: 8px; padding: 2px 8px; background: #ff9800; color: white; border-radius: 3px; font-size: 11px;">&#9733; {$top_inviter_badge}</span></if>
+    </td>
+</tr>
+<if $successful_invites_count then>
+<tr>
+    <td class="trow1" width="40%"><strong>{$lang->invite_profile_successful_invites}</strong></td>
+    <td class="trow1">{$successful_invites_count}</td>
+</tr>
+</if>
+<if $active_codes_count then>
+<tr>
+    <td class="trow2" width="40%"><strong>{$lang->invite_profile_active_codes}</strong></td>
+    <td class="trow2">{$active_codes_count}</td>
+</tr>
+</if>
+</if>
+<if $is_own_profile then>
+<tr>
+    <td class="trow1" colspan="2" style="text-align: center;">
+        <a href="usercp.php?action=invite_settings" class="button">{$lang->invite_profile_privacy_settings}</a>
+    </td>
+</tr>
+</if>
+</tbody>
+</table>
+</div>

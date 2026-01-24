@@ -1,0 +1,73 @@
+<html>
+<head>
+<title>{$mybb->settings['bbname']} - {$form_title}</title>
+{$headerinclude}
+</head>
+<body>
+{$header}
+<table width="100%" border="0" align="center">
+<tr>
+{$usercpnav}
+<td valign="top">
+    <form action="{$form_action}" method="post">
+        <input type="hidden" name="my_post_key" value="{$mybb->post_code}" />
+        <table border="0" cellspacing="{$theme['borderwidth']}" cellpadding="{$theme['tablespace']}" class="tborder">
+            <tr>
+                <td class="thead" colspan="2">
+                    <strong>{$form_title}</strong>
+                </td>
+            </tr>
+            <tr>
+                <td class="trow1" width="30%">
+                    <strong>{$lang->invite_template_name}:</strong>
+                </td>
+                <td class="trow1">
+                    <input type="text" name="name" value="{$name_value}" class="textbox" style="width: 100%;" maxlength="100" required />
+                    <br /><small>A unique name for this template</small>
+                </td>
+            </tr>
+            <tr>
+                <td class="trow2">
+                    <strong>{$lang->invite_template_subject}:</strong>
+                </td>
+                <td class="trow2">
+                    <input type="text" name="subject" value="{$subject_value}" class="textbox" style="width: 100%;" maxlength="255" required />
+                    <br /><small>Email subject line</small>
+                </td>
+            </tr>
+            <tr>
+                <td class="trow1">
+                    <strong>Template Type:</strong>
+                </td>
+                <td class="trow1">
+                    <select name="type" class="textbox">
+                        <option value="invite"<if $type_value == 'invite' then> selected</if>>Invite</option>
+                        <option value="reminder"<if $type_value == 'reminder' then> selected</if>>Reminder</option>
+                        <option value="welcome"<if $type_value == 'welcome' then> selected</if>>Welcome</option>
+                    </select>
+                    <br /><small>Type of email template</small>
+                </td>
+            </tr>
+            <tr>
+                <td class="trow2" valign="top">
+                    <strong>{$lang->invite_template_body}:</strong>
+                </td>
+                <td class="trow2">
+                    <textarea name="body" rows="15" cols="50" class="textbox" style="width: 100%;" required>{$body_value}</textarea>
+                    <br /><small>{$lang->invite_template_variables}</small>
+                </td>
+            </tr>
+            <tr>
+                <td class="tfoot" colspan="2" align="center">
+                    <input type="submit" name="submit" value="{$lang->save}" class="button" />
+                    <input type="button" value="{$lang->cancel}" class="button" onclick="window.location='usercp.php?action=invites&amp;tab=my_templates';" />
+                </td>
+            </tr>
+        </table>
+    </form>
+</td>
+</tr>
+</table>
+{$footer}
+</body>
+</html>

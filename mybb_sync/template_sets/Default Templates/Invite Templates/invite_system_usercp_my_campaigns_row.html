@@ -1,0 +1,16 @@
+<tr>
+<td class="trow1">{$campaign['name']}</td>
+<td class="trow1">
+<span class="status-{$campaign['status_class']}">{$campaign['status']}</span>
+<if $campaign['progress_percent'] > 0 then>
+<br /><small>{$campaign['progress_percent']}% complete</small>
+</if>
+</td>
+<td class="trow1 align_center">{$campaign['total_recipients']}</td>
+<td class="trow1 align_center">{$campaign['sent_count']}</td>
+<td class="trow1">{$campaign['created_at_formatted']}</td>
+<td class="trow1 align_center">
+<a href="usercp.php?action=invites&amp;tab=my_campaigns&amp;campaign_action=view&amp;campaign_id={$campaign['id']}">{$lang->invite_view}</a> |
+<a href="usercp.php?action=invites&amp;tab=my_campaigns&amp;campaign_action=recipients&amp;campaign_id={$campaign['id']}">{$lang->invite_campaign_recipients}</a>
+</td>
+</tr>

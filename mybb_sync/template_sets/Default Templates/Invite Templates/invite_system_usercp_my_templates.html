@@ -1,0 +1,42 @@
+<html>
+<head>
+<title>{$mybb->settings['bbname']} - {$lang->invite_my_templates}</title>
+{$headerinclude}
+</head>
+<body>
+{$header}
+<table width="100%" border="0" align="center">
+<tr>
+{$usercpnav}
+<td valign="top">
+    <table border="0" cellspacing="{$theme['borderwidth']}" cellpadding="{$theme['tablespace']}" class="tborder">
+        <tr>
+            <td class="thead" colspan="4">
+                <strong>{$lang->invite_my_templates}</strong>
+            </td>
+        </tr>
+        <tr>
+            <td class="tcat" colspan="4">
+                {$lang->invite_my_templates_desc}<br />
+                <small>{$lang->invite_template_variables}</small>
+            </td>
+        </tr>
+        <tr>
+            <td class="tcat" width="30%"><strong>{$lang->invite_template_name}</strong></td>
+            <td class="tcat" width="40%"><strong>{$lang->invite_template_subject}</strong></td>
+            <td class="tcat" width="15%"><strong>{$lang->created}</strong></td>
+            <td class="tcat" width="15%" align="center"><strong>{$lang->controls}</strong></td>
+        </tr>
+        {$template_rows}
+        <tr>
+            <td class="tfoot" colspan="4" align="center">
+                <a href="usercp.php?action=invites&amp;tab=my_templates&amp;do=create" class="button">{$lang->invite_template_create}</a>
+            </td>
+        </tr>
+    </table>
+</td>
+</tr>
+</table>
+{$footer}
+</body>
+</html>

@@ -1,0 +1,9 @@
+<tr>
+    <td class="trow1">{$template['name']}</td>
+    <td class="trow1">{$template['subject']}</td>
+    <td class="trow1">{$template['created_at']}</td>
+    <td class="trow1" align="center">
+        <a href="{$template['edit_url']}">{$lang->edit}</a> |
+        <a href="{$template['delete_url']}" onclick="return confirm('{$lang->invite_template_delete_confirm}');">{$lang->delete}</a>
+    </td>
+</tr>

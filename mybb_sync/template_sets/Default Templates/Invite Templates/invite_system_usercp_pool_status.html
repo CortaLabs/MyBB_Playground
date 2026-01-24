@@ -1,0 +1,27 @@
+<div class="invite_pool_status" style="background: #f9f9f9; padding: 12px; border-radius: 4px; margin-bottom: 15px; border-left: 4px solid #4caf50;">
+    <div style="display: flex; justify-content: space-between; align-items: center;">
+        <div>
+            <strong>{$lang->invite_pool_label}:</strong>
+            <if $pool_stats['is_unlimited'] then>
+                <span style="color: #4caf50; font-weight: bold;">{$lang->invite_unlimited}</span>
+            <else>
+                <span style="font-size: 18px; font-weight: bold; color: #333;">{$pool_stats['remaining']}</span> / {$pool_stats['total']}
+            </if>
+        </div>
+        <if !$pool_stats['is_unlimited'] then>
+            <div style="width: 200px; background: #e0e0e0; height: 20px; border-radius: 10px; overflow: hidden;">
+                <div style="background: linear-gradient(90deg, #4caf50, #45a049); height: 100%; width: {$pool_stats['percent']}%; transition: width 0.3s;"></div>
+            </div>
+        </if>
+    </div>
+    <if $pool_stats['bonus'] > 0 then>
+        <div style="margin-top: 8px; font-size: 12px; color: #666;">
+            <span style="color: #ff9800;">★</span> {$lang->invite_bonus_invites}: {$pool_stats['bonus']}
+        </div>
+    </if>
+    <if $pool_stats['next_regen'] then>
+        <div style="margin-top: 8px; font-size: 12px; color: #666;">
+            {$lang->invite_next_regen}: {$next_regen_formatted}
+        </div>
+    </if>
+</div>

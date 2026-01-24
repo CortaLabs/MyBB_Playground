@@ -1,0 +1,55 @@
+<html>
+<head>
+<title>{$mybb->settings['bbname']} - {$lang->invite_campaign_recipients}</title>
+{$headerinclude}
+</head>
+<body>
+{$header}
+
+<table width="100%" border="0" align="center">
+<tr>
+{$usercpnav}
+<td valign="top">
+
+<form action="usercp.php?action=invites&amp;tab=my_campaigns&amp;campaign_action=recipients&amp;campaign_id={$campaign['id']}" method="post">
+<input type="hidden" name="my_post_key" value="{$mybb->post_code}" />
+
+<table border="0" cellspacing="{$theme['borderwidth']}" cellpadding="{$theme['tablespace']}" class="tborder">
+<tr>
+<td class="thead" colspan="2">
+<strong>{$lang->invite_campaign_recipients}: {$campaign['name']}</strong>
+</td>
+</tr>
+<tr>
+<td class="tcat" colspan="2">
+<strong>{$lang->invite_add_recipients}</strong><br />
+<small>{$lang->invite_campaign_max_recipients} | {$lang->invite_recipients_format}</small>
+</td>
+</tr>
+<tr>
+<td class="trow1" colspan="2">
+<textarea class="textarea" name="recipients" rows="10" cols="80" placeholder="{$lang->invite_recipients_placeholder}"></textarea>
+<br /><small>{$lang->invite_recipients_help}</small>
+</td>
+</tr>
+</table>
+
+<div style="text-align: center;">
+<input type="submit" class="button" name="submit" value="{$lang->invite_add_recipients_button}" />
+</div>
+
+</form>
+
+<br />
+<div align="center">
+<a href="usercp.php?action=invites&amp;tab=my_campaigns&amp;campaign_action=view&amp;campaign_id={$campaign['id']}">{$lang->invite_back_to_campaign}</a> |
+<a href="usercp.php?action=invites&amp;tab=my_campaigns">{$lang->invite_back_to_campaigns}</a>
+</div>
+
+</td>
+</tr>
+</table>
+
+{$footer}
+</body>
+</html>

@@ -205,9 +205,9 @@ class TestPluginInstaller:
 
         assert result["success"] is True
         assert result["plugin"] == sample_plugin
-        assert len(result["files_copied"]) >= 2  # PHP + language file
+        assert len(result["files_deployed"]) >= 2  # PHP + language file
         # Directory overlay copies with relative paths from inc/
-        assert any("plugins/test_plugin.php" in f or "test_plugin.php" in f for f in result["files_copied"])
+        assert any("plugins/test_plugin.php" in f["path"] or "test_plugin.php" in f["path"] for f in result["files_deployed"])
 
         # Verify files were copied
         plugin_file = temp_repo / "TestForum" / "inc" / "plugins" / f"{sample_plugin}.php"
@@ -242,9 +242,15 @@ class TestPluginInstaller:
 
         assert result["success"] is True
 
-        # Verify backup file exists (directory overlay backs up files silently)
-        backups = list(existing_file.parent.glob(f"{sample_plugin}.php.backup.*"))
-        assert len(backups) > 0
+        # Verify backup was created in plugin_manager/backups/
+        # Backups are stored OUTSIDE TestForum in plugin_manager/backups/{codename}/{timestamp}/
+        backup_root = temp_repo / "plugin_manager" / "backups" / sample_plugin
+        assert backup_root.exists(), f"Backup root should exist: {backup_root}"
+        # Find any backup directories
+        backup_dirs = list(backup_root.iterdir()) if backup_root.exists() else []
+        assert len(backup_dirs) > 0, "At least one backup directory should exist"
+        # Verify backups_created in result
+        assert len(result["backups_created"]) > 0, "backups_created should contain backup paths"
 
         # Verify new file was installed
         assert existing_file.exists()
@@ -290,6 +296,172 @@ class TestPluginInstaller:
         assert "plugin1" in installed
         assert "plugin2" in installed
         assert "index" not in installed
+
+    def test_install_plugin_with_custom_directories(self, config, db, plugin_workspace, temp_repo):
+        """Test that plugins with custom directories (admin/, uploads/, etc.) are fully deployed."""
+        codename = "custom_plugin"
+
+        # Add to database
+        db.add_project(
+            codename=codename,
+            display_name="Custom Plugin",
+            workspace_path=str(temp_repo / "plugin_manager" / "plugins" / "public" / codename),
+            type="plugin",
+            visibility="public"
+        )
+
+        # Create workspace
+        workspace_path = plugin_workspace.create_workspace(codename, "public")
+
+        # Create standard plugin PHP file
+        plugin_dir = workspace_path / "inc" / "plugins"
+        plugin_dir.mkdir(parents=True, exist_ok=True)
+        plugin_file = plugin_dir / f"{codename}.php"
+        plugin_file.write_text("<?php\nfunction custom_plugin_info() { return array('name' => 'Custom'); }\n")
+
+        # Create language file
+        lang_dir = workspace_path / "inc" / "languages" / "english"
+        lang_dir.mkdir(parents=True, exist_ok=True)
+        lang_file = lang_dir / f"{codename}.lang.php"
+        lang_file.write_text("<?php\n$l['custom_plugin_name'] = 'Custom Plugin';\n")
+
+        # Create custom admin/ directory (common in third-party plugins)
+        admin_dir = workspace_path / "admin" / "modules" / "custom"
+        admin_dir.mkdir(parents=True, exist_ok=True)
+        admin_file = admin_dir / "module.php"
+        admin_file.write_text("<?php\n// Admin module\n")
+
+        # Create uploads/ directory (for user-uploaded files)
+        uploads_dir = workspace_path / "uploads" / "custom_plugin"
+        uploads_dir.mkdir(parents=True, exist_ok=True)
+        uploads_file = uploads_dir / ".htaccess"
+        uploads_file.write_text("Order deny,allow\nDeny from all\n")
+
+        # Create root-level PHP file (standalone page)
+        root_php = workspace_path / "custom_page.php"
+        root_php.write_text("<?php\ndefine('IN_MYBB', 1);\n// Custom page\n")
+
+        # Create jscripts/ directory
+        jscripts_dir = workspace_path / "jscripts"
+        jscripts_dir.mkdir(parents=True, exist_ok=True)
+        js_file = jscripts_dir / "custom_plugin.js"
+        js_file.write_text("// Custom JavaScript\n")
+
+        # Create metadata
+        meta = {
+            "codename": codename,
+            "display_name": "Custom Plugin",
+            "name": "Custom Plugin",
+            "description": "Plugin with custom directories",
+            "author": "Test",
+            "version": "1.0.0",
+            "type": "plugin",
+            "visibility": "public",
+            "mybb_compatibility": "18*",
+            "created_at": "2024-01-01T00:00:00",
+            "updated_at": "2024-01-01T00:00:00",
+        }
+        plugin_workspace.write_meta(codename, meta, "public")
+
+        # Install the plugin
+        installer = PluginInstaller(config, db, plugin_workspace)
+        result = installer.install_plugin(codename)
+
+        assert result["success"] is True
+        assert result["plugin"] == codename
+
+        # Verify standard files were deployed
+        dest_plugin = temp_repo / "TestForum" / "inc" / "plugins" / f"{codename}.php"
+        assert dest_plugin.exists(), "Plugin PHP file should be deployed"
+
+        dest_lang = temp_repo / "TestForum" / "inc" / "languages" / "english" / f"{codename}.lang.php"
+        assert dest_lang.exists(), "Language file should be deployed"
+
+        # Verify custom directories were deployed
+        dest_admin = temp_repo / "TestForum" / "admin" / "modules" / "custom" / "module.php"
+        assert dest_admin.exists(), "Admin module should be deployed"
+
+        dest_uploads = temp_repo / "TestForum" / "uploads" / "custom_plugin" / ".htaccess"
+        assert dest_uploads.exists(), "Uploads directory should be deployed"
+
+        dest_js = temp_repo / "TestForum" / "jscripts" / "custom_plugin.js"
+        assert dest_js.exists(), "JavaScript file should be deployed"
+
+        # Verify root-level PHP file was deployed
+        dest_root_php = temp_repo / "TestForum" / "custom_page.php"
+        assert dest_root_php.exists(), "Root-level PHP file should be deployed"
+
+        # Verify all files are tracked
+        assert len(result["files_deployed"]) >= 6, f"Should track at least 6 files, got {len(result['files_deployed'])}"
+
+        # Verify workspace-only files are NOT deployed
+        dest_meta = temp_repo / "TestForum" / "meta.json"
+        assert not dest_meta.exists(), "meta.json should NOT be deployed"
+
+    def test_install_plugin_skips_workspace_only_files(self, config, db, plugin_workspace, temp_repo):
+        """Test that workspace-only files (meta.json, README, tests/, .git/) are NOT deployed."""
+        codename = "skip_test_plugin"
+
+        # Add to database
+        db.add_project(
+            codename=codename,
+            display_name="Skip Test Plugin",
+            workspace_path=str(temp_repo / "plugin_manager" / "plugins" / "public" / codename),
+            type="plugin",
+            visibility="public"
+        )
+
+        # Create workspace
+        workspace_path = plugin_workspace.create_workspace(codename, "public")
+
+        # Create required plugin PHP file
+        plugin_dir = workspace_path / "inc" / "plugins"
+        plugin_dir.mkdir(parents=True, exist_ok=True)
+        plugin_file = plugin_dir / f"{codename}.php"
+        plugin_file.write_text("<?php\nfunction skip_test_plugin_info() { return array('name' => 'Skip'); }\n")
+
+        # Create workspace-only files that should NOT be deployed
+        readme = workspace_path / "README.md"
+        readme.write_text("# Skip Test Plugin\n\nThis is documentation.")
+
+        tests_dir = workspace_path / "tests"
+        tests_dir.mkdir(parents=True, exist_ok=True)
+        test_file = tests_dir / "test_plugin.py"
+        test_file.write_text("def test_something(): pass\n")
+
+        gitignore = workspace_path / ".gitignore"
+        gitignore.write_text("*.pyc\n")
+
+        # Create metadata (already created by workspace, but ensure it exists)
+        meta = {
+            "codename": codename,
+            "display_name": "Skip Test Plugin",
+            "name": "Skip Test Plugin",
+            "description": "Test workspace-only file exclusion",
+            "author": "Test",
+            "version": "1.0.0",
+            "type": "plugin",
+            "visibility": "public",
+            "mybb_compatibility": "18*",
+            "created_at": "2024-01-01T00:00:00",
+            "updated_at": "2024-01-01T00:00:00",
+        }
+        plugin_workspace.write_meta(codename, meta, "public")
+
+        # Install the plugin
+        installer = PluginInstaller(config, db, plugin_workspace)
+        result = installer.install_plugin(codename)
+
+        assert result["success"] is True
+
+        # Verify workspace-only files are NOT deployed
+        assert not (temp_repo / "TestForum" / "meta.json").exists(), "meta.json should NOT be deployed"
+        assert not (temp_repo / "TestForum" / "README.md").exists(), "README.md should NOT be deployed"
+        assert not (temp_repo / "TestForum" / "tests").exists(), "tests/ should NOT be deployed"
+        assert not (temp_repo / "TestForum" / ".gitignore").exists(), ".gitignore should NOT be deployed"
+
+        # Verify only the plugin file was deployed
+        assert (temp_repo / "TestForum" / "inc" / "plugins" / f"{codename}.php").exists()
 
 
 class TestThemeInstaller:

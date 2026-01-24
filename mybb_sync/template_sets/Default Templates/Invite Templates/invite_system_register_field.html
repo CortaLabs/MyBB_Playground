@@ -1,0 +1,61 @@
+<fieldset class="trow1" style="margin: 10px; padding: 12px; border: 2px solid #0066a2; background: #f5f5f5;">
+    <legend><strong>{$lang->invite_code}</strong></legend>
+    <div style="padding: 10px;">
+        <span class="smalltext">{$lang->invite_code_enter}</span>
+        <br /><br />
+        <input type="text" class="textbox" name="invite_code" id="invite_code" value="{$invite_code}" style="width: 95%; max-width: 400px;" maxlength="36" placeholder="{$lang->invite_code_placeholder}" />
+        <div id="invite_code_status" style="margin-top: 5px; font-size: 11px;"></div>
+    </div>
+</fieldset>
+
+<script type="text/javascript">
+// Real-time invite code validation
+if(typeof jQuery != 'undefined') {
+    jQuery(document).ready(function($) {
+        var validateTimeout = null;
+        var $inviteCode = $('#invite_code');
+        var $referrerField = $('input[name="referrername"]');
+        var $statusDiv = $('#invite_code_status');
+
+        $inviteCode.on('input blur', function() {
+            clearTimeout(validateTimeout);
+            var code = $(this).val().trim();
+
+            if(code.length === 0) {
+                $statusDiv.html('');
+                return;
+            }
+
+            // Debounce - wait 500ms after user stops typing
+            validateTimeout = setTimeout(function() {
+                $statusDiv.html('<span style="color: #999;">Validating...</span>');
+
+                $.ajax({
+                    url: 'xmlhttp.php',
+                    type: 'GET',
+                    data: { action: 'invite_validate_code', code: code },
+                    dataType: 'json',
+                    success: function(response) {
+                        if(response.valid) {
+                            $statusDiv.html('<span style="color: #0a0;">✓ Valid code</span>');
+                            // Auto-populate referrer field
+                            if(response.creator_username && $referrerField.length && !$referrerField.val()) {
+                                $referrerField.val(response.creator_username);
+                            }
+                        } else {
+                            var errorMsg = 'Invalid code';
+                            if(response.error === 'code_expired') errorMsg = 'Code has expired';
+                            else if(response.error === 'code_revoked') errorMsg = 'Code has been revoked';
+                            else if(response.error === 'code_exhausted') errorMsg = 'Code has been fully used';
+                            $statusDiv.html('<span style="color: #c00;">✗ ' + errorMsg + '</span>');
+                        }
+                    },
+                    error: function() {
+                        $statusDiv.html('<span style="color: #c00;">Validation failed</span>');
+                    }
+                });
+            }, 500);
+        });
+    });
+}
+</script>

@@ -1,0 +1,245 @@
+<style>
+.invite-tree-container {
+    max-width: 1000px;
+    margin: 20px auto;
+}
+.invite-tree-stats {
+    background: #f5f5f5;
+    border: 1px solid #ddd;
+    padding: 15px;
+    margin-bottom: 20px;
+    border-radius: 4px;
+}
+.invite-tree-stats h3 {
+    margin: 0 0 10px 0;
+    font-size: 16px;
+}
+.invite-tree-stats .stat-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 5px 0;
+    border-bottom: 1px solid #e0e0e0;
+}
+.invite-tree-stats .stat-row:last-child {
+    border-bottom: none;
+}
+.invite-tree-stats .stat-label {
+    font-weight: bold;
+}
+.invite-tree {
+    border: 1px solid #ddd;
+    background: #fff;
+    padding: 20px;
+    border-radius: 4px;
+}
+.invite-tree ul {
+    list-style: none;
+    margin: 0;
+    padding: 0 0 0 20px;
+}
+.invite-tree > ul {
+    padding: 0;
+}
+.invite-tree li {
+    margin: 5px 0;
+    position: relative;
+}
+.invite-tree li:before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: -15px;
+    border-left: 1px solid #ccc;
+    border-bottom: 1px solid #ccc;
+    width: 15px;
+    height: 20px;
+}
+.invite-tree li:last-child:before {
+    border-left: none;
+}
+.invite-tree li:after {
+    content: "";
+    position: absolute;
+    top: 20px;
+    bottom: -5px;
+    left: -15px;
+    border-left: 1px solid #ccc;
+}
+.invite-tree li:last-child:after {
+    display: none;
+}
+.tree-node {
+    padding: 6px 10px;
+    background: #fafafa;
+    border: 1px solid #e0e0e0;
+    border-left: 3px solid #ccc;
+    border-radius: 2px;
+    display: inline-block;
+    margin-bottom: 5px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+.tree-node:hover {
+    background: #f0f7fc;
+    border-left-color: #0066a2;
+}
+.tree-node.highlight {
+    background: #fffbea;
+    border-left-color: #e6a700;
+}
+.tree-node.root {
+    background: #f0f7fc;
+    border-left-color: #0066a2;
+    border-left-width: 4px;
+}
+.tree-node .node-avatar {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    vertical-align: middle;
+    margin-right: 8px;
+}
+.tree-node .node-username {
+    font-weight: bold;
+    color: #333;
+}
+.tree-node .node-usergroup {
+    font-size: 11px;
+    color: #666;
+    margin-left: 5px;
+}
+.tree-node .node-stats {
+    font-size: 11px;
+    color: #999;
+    margin-left: 10px;
+}
+.tree-toggle {
+    cursor: pointer;
+    user-select: none;
+    display: inline-block;
+    width: 16px;
+    text-align: center;
+    margin-right: 5px;
+}
+.tree-children.collapsed {
+    display: none;
+}
+.tree-export {
+    margin-top: 20px;
+    text-align: right;
+}
+.tree-export .button {
+    margin-left: 10px;
+}
+.tree-disclaimer {
+    margin-top: 15px;
+    padding: 10px;
+    background: #f9f9f9;
+    border: 1px solid #e0e0e0;
+    border-radius: 3px;
+    font-size: 11px;
+    color: #666;
+    line-height: 1.5;
+}
+.tree-disclaimer strong {
+    color: #555;
+}
+.node-badge {
+    font-size: 10px;
+    padding: 2px 6px;
+    border-radius: 3px;
+    margin-left: 8px;
+    font-weight: 600;
+}
+.badge-invited {
+    background: #e3f2fd;
+    color: #1565c0;
+}
+.badge-applied {
+    background: #fff3e0;
+    color: #e65100;
+}
+.badge-staff {
+    background: #f3e5f5;
+    color: #7b1fa2;
+}
+.badge-founder {
+    background: #e8f5e9;
+    color: #2e7d32;
+}
+.tree-node.dimmed {
+    opacity: 0.4;
+}
+</style>
+<script type="text/javascript">
+function toggleTreeNode(nodeId) {
+    var children = document.getElementById('children-' + nodeId);
+    var toggle = document.getElementById('toggle-' + nodeId);
+    if(children) {
+        if(children.classList.contains('collapsed')) {
+            children.classList.remove('collapsed');
+            toggle.innerHTML = '&#9660;'; // Down arrow
+        } else {
+            children.classList.add('collapsed');
+            toggle.innerHTML = '&#9658;'; // Right arrow
+        }
+    }
+}
+
+function highlightPath(element) {
+    // Remove existing highlights
+    document.querySelectorAll('.tree-node').forEach(function(n) {
+        n.classList.remove('highlight', 'dimmed');
+    });
+
+    // Highlight clicked node
+    element.classList.add('highlight');
+
+    // Highlight ancestors (walk up the DOM)
+    var parent = element.closest('li').parentElement.closest('li');
+    while(parent) {
+        var parentNode = parent.querySelector(':scope > .tree-node');
+        if(parentNode) {
+            parentNode.classList.add('highlight');
+        }
+        parent = parent.parentElement.closest('li');
+    }
+
+    // Highlight direct children
+    var childrenUl = element.closest('li').querySelector(':scope > ul');
+    if(childrenUl) {
+        childrenUl.querySelectorAll(':scope > li > .tree-node').forEach(function(n) {
+            n.classList.add('highlight');
+        });
+    }
+
+    // Dim everything else
+    document.querySelectorAll('.tree-node:not(.highlight)').forEach(function(n) {
+        n.classList.add('dimmed');
+    });
+}
+</script>
+<div class="invite-tree-container">
+    <table border="0" cellspacing="{$theme['borderwidth']}" cellpadding="{$theme['tablespace']}" class="tborder">
+        <thead>
+            <tr>
+                <td class="thead"><strong>{$page_title}</strong></td>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td class="trow1">
+                    {$tree_stats}
+                    <div class="invite-tree">
+                        {$tree_content}
+                    </div>
+                    <div class="tree-disclaimer">
+                        <strong>About this tree:</strong> This shows how access was granted through invite codes.
+                        It does not imply endorsement, responsibility, or hierarchy between users.
+                    </div>
+                    {$tree_export}
+                </td>
+            </tr>
+        </tbody>
+    </table>
+</div>

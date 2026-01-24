@@ -1,0 +1,22 @@
+<table border="0" cellspacing="{$theme['borderwidth']}" cellpadding="{$theme['tablespace']}" class="tborder">
+<thead><tr><td class="thead" colspan="2"><strong>{$lang->invite_send_email}</strong></td></tr></thead>
+<tbody>
+<tr><td class="trow1" colspan="2">
+{$error_messages}
+<form action="usercp.php?action=invites&amp;tab=emails" method="post">
+<input type="hidden" name="my_post_key" value="{$mybb->post_code}" />
+<div style="margin-bottom: 15px;">
+    <label for="email"><strong>{$lang->invite_recipient_email}:</strong></label>
+    <input type="email" name="email" id="email" style="width: 100%; padding: 8px; margin-top: 5px;" required />
+</div>
+<div style="margin-bottom: 15px;">
+    <label for="message"><strong>{$lang->invite_personal_message}:</strong></label>
+    <textarea name="message" id="message" rows="5" style="width: 100%; padding: 8px; margin-top: 5px;"></textarea>
+</div>
+<div style="text-align: center;">
+    <button type="submit" style="background: #4caf50; color: white; padding: 12px 30px; border: none; border-radius: 4px; cursor: pointer;">{$lang->invite_send_button}</button>
+</div>
+</form>
+</td></tr>
+</tbody>
+</table>

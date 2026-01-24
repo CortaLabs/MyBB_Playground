@@ -1,0 +1,25 @@
+<html>
+<head>
+<title>{$page_title} - {$mybb->settings['bbname']}</title>
+{$headerinclude}
+<style>
+.verification-success { max-width: 500px; margin: 0 auto; text-align: center; }
+.success-icon { font-size: 64px; color: #4caf50; margin: 20px 0; }
+.success-message { padding: 20px; background: #d4edda; border-radius: 4px; color: #155724; margin: 20px 0; }
+</style>
+</head>
+<body>
+{$header}
+<div class="verification-success">
+<table border="0" cellspacing="{$theme['borderwidth']}" cellpadding="{$theme['tablespace']}" class="tborder">
+<thead><tr><td class="thead"><strong>{$page_title}</strong></td></tr></thead>
+<tbody><tr><td class="trow1">
+<div class="success-icon">&#10003;</div>
+<div class="success-message"><p>{$message}</p></div>
+<p><a href="misc.php?action=application_status&amp;id={$application_id}&amp;token={$token}">{$lang->invite_view_status}</a></p>
+</td></tr></tbody>
+</table>
+</div>
+{$footer}
+</body>
+</html>

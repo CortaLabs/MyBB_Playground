@@ -71,16 +71,126 @@ class PluginInstaller:
         self.backup_root = config.repo_root / "plugin_manager" / "backups"
         self.backup_root.mkdir(parents=True, exist_ok=True)
 
+    def _is_safe_to_track(self, dir_path: Path, codename: str) -> bool:
+        """Check if a directory is safe to track for later deletion.
+
+        A directory is safe to track ONLY if it is plugin-specific, meaning:
+        1. It contains the plugin codename in its path
+        2. It is NOT a protected core MyBB directory
+
+        This prevents tracking (and later deleting) core MyBB directories.
+
+        Args:
+            dir_path: Absolute path to the directory
+            codename: Plugin codename
+
+        Returns:
+            True if directory is safe to track, False otherwise
+        """
+        try:
+            rel_path = dir_path.relative_to(self.mybb_root)
+            rel_str = str(rel_path)
+        except ValueError:
+            # Path is not under mybb_root - definitely not safe
+            return False
+
+        # Check if this is a protected directory
+        if rel_str in self.PROTECTED_DIRECTORIES:
+            return False
+
+        # Check if this directory is plugin-specific (contains codename)
+        # A directory like "inc/plugins/myplugin" or "admin/modules/user/myplugin"
+        # should be trackable, but "admin/modules/user" should not
+        parts = rel_path.parts
+        if codename in parts:
+            return True
+
+        # If the path doesn't contain the codename, it's likely a core directory
+        # that we should NOT track, even if it's not explicitly in PROTECTED_DIRECTORIES
+        return False
+
+    def _is_protected_directory(self, dir_path: Path) -> bool:
+        """Check if a directory is a protected core MyBB directory.
+
+        Args:
+            dir_path: Absolute path to the directory
+
+        Returns:
+            True if directory is protected, False otherwise
+        """
+        try:
+            rel_path = str(dir_path.relative_to(self.mybb_root))
+            return rel_path in self.PROTECTED_DIRECTORIES
+        except ValueError:
+            return False
+
+    # Files/directories that are workspace-only and should NOT be deployed
+    WORKSPACE_ONLY = {
+        "meta.json",      # Plugin metadata file
+        "README.md",      # Documentation
+        "readme.md",      # Documentation (lowercase)
+        "README.txt",     # Documentation
+        "readme.txt",     # Documentation (lowercase)
+        "tests",          # Test directory
+        ".git",           # Git repository
+        ".gitignore",     # Git ignore file
+        ".gitkeep",       # Git keep file
+        "__pycache__",    # Python cache
+        ".DS_Store",      # macOS metadata
+    }
+
+    # Directories that need special destination handling (not direct overlay to MyBB root)
+    SPECIAL_DEST_DIRS = {
+        "templates": lambda mybb_root, codename: mybb_root / "inc" / "plugins" / codename / "templates",
+        "templates_themes": lambda mybb_root, codename: mybb_root / "inc" / "plugins" / codename / "templates_themes",
+    }
+
+    # PROTECTED DIRECTORIES - These paths relative to MyBB root can NEVER be deleted.
+    # They are core MyBB directories that exist regardless of any plugins.
+    # This is a CRITICAL safety measure to prevent catastrophic data loss.
+    PROTECTED_DIRECTORIES = {
+        # Core top-level directories
+        "admin",
+        "admin/modules",
+        "admin/modules/config",
+        "admin/modules/forum",
+        "admin/modules/home",
+        "admin/modules/style",
+        "admin/modules/tools",
+        "admin/modules/user",
+        "archive",
+        "cache",
+        "images",
+        "inc",
+        "inc/cachehandlers",
+        "inc/datahandlers",
+        "inc/languages",
+        "inc/languages/english",
+        "inc/languages/english/admin",
+        "inc/mailhandlers",
+        "inc/plugins",
+        "inc/tasks",
+        "install",
+        "jscripts",
+        "uploads",
+        "uploads/avatars",
+    }
+
     def install_plugin(self, codename: str, visibility: Optional[str] = None) -> Dict[str, Any]:
         """Deploy plugin to TestForum using directory overlay.
 
-        The workspace structure mirrors MyBB's layout, so installation is a simple
-        directory overlay:
+        Copies ALL workspace contents to TestForum, except workspace-only files
+        (meta.json, README.md, tests/, .git/, etc.). The workspace structure
+        mirrors MyBB's layout, so most directories overlay directly:
         - workspace/inc/ -> TestForum/inc/
-        - workspace/jscripts/ -> TestForum/jscripts/ (if exists)
-        - workspace/images/ -> TestForum/images/ (if exists)
-        - workspace/templates/ -> TestForum/inc/plugins/{codename}/templates/ (if exists)
-        - workspace/templates_themes/ -> TestForum/inc/plugins/{codename}/templates_themes/ (if exists)
+        - workspace/admin/ -> TestForum/admin/
+        - workspace/uploads/ -> TestForum/uploads/
+        - workspace/*.php -> TestForum/*.php (root-level PHP files)
+        - etc.
+
+        Special handling for plugin-specific directories:
+        - workspace/templates/ -> TestForum/inc/plugins/{codename}/templates/
+        - workspace/templates_themes/ -> TestForum/inc/plugins/{codename}/templates_themes/
 
         All deployed files and created directories are tracked in the database
         for complete cleanup on uninstall. Backups are stored OUTSIDE TestForum.
@@ -126,19 +236,46 @@ class PluginInstaller:
         all_dirs: List[str] = []
         all_backups: List[str] = []
 
-        # Overlay inc/ directory (contains plugins and languages)
+        # Verify inc/ directory exists (required for all plugins)
         inc_src = workspace_path / "inc"
-        if inc_src.exists():
-            files, dirs, backups = self._overlay_directory(
-                inc_src, self.mybb_root / "inc", codename
-            )
-            all_files.extend(files)
-            all_dirs.extend(dirs)
-            all_backups.extend(backups)
-        else:
+        if not inc_src.exists():
             result["success"] = False
             result["error"] = f"Plugin inc/ directory not found: {inc_src}"
             return result
+
+        # Iterate over ALL items in workspace and deploy them
+        for item in workspace_path.iterdir():
+            item_name = item.name
+
+            # Skip workspace-only files/directories
+            if item_name in self.WORKSPACE_ONLY:
+                continue
+
+            # Handle directories
+            if item.is_dir():
+                # Check if any files exist in the directory
+                if not any(item.rglob("*")):
+                    continue  # Skip empty directories
+
+                # Determine destination based on special handling or direct overlay
+                if item_name in self.SPECIAL_DEST_DIRS:
+                    dest_dir = self.SPECIAL_DEST_DIRS[item_name](self.mybb_root, codename)
+                else:
+                    # Direct overlay: workspace/X/ -> TestForum/X/
+                    dest_dir = self.mybb_root / item_name
+
+                files, dirs, backups = self._overlay_directory(item, dest_dir, codename)
+                all_files.extend(files)
+                all_dirs.extend(dirs)
+                all_backups.extend(backups)
+
+            # Handle root-level files (e.g., standalone PHP pages)
+            elif item.is_file():
+                # Deploy root-level files directly to MyBB root
+                files, dirs, backups = self._overlay_file(item, self.mybb_root, codename)
+                all_files.extend(files)
+                all_dirs.extend(dirs)
+                all_backups.extend(backups)
 
         # Verify plugin file exists in the destination
         dest_plugin_file = self.mybb_root / "inc" / "plugins" / f"{codename}.php"
@@ -146,48 +283,6 @@ class PluginInstaller:
             result["success"] = False
             result["error"] = f"Plugin file not found after install: {dest_plugin_file}"
             return result
-
-        # Overlay jscripts/ if exists
-        jscripts_src = workspace_path / "jscripts"
-        if jscripts_src.exists() and any(jscripts_src.iterdir()):
-            files, dirs, backups = self._overlay_directory(
-                jscripts_src, self.mybb_root / "jscripts", codename
-            )
-            all_files.extend(files)
-            all_dirs.extend(dirs)
-            all_backups.extend(backups)
-
-        # Overlay images/ if exists
-        images_src = workspace_path / "images"
-        if images_src.exists() and any(images_src.iterdir()):
-            files, dirs, backups = self._overlay_directory(
-                images_src, self.mybb_root / "images", codename
-            )
-            all_files.extend(files)
-            all_dirs.extend(dirs)
-            all_backups.extend(backups)
-
-        # Overlay templates/ if exists (plugin-specific templates)
-        templates_src = workspace_path / "templates"
-        if templates_src.exists() and any(templates_src.iterdir()):
-            templates_dest = self.mybb_root / "inc" / "plugins" / codename / "templates"
-            files, dirs, backups = self._overlay_directory(
-                templates_src, templates_dest, codename
-            )
-            all_files.extend(files)
-            all_dirs.extend(dirs)
-            all_backups.extend(backups)
-
-        # Overlay templates_themes/ if exists (theme-specific template overrides)
-        templates_themes_src = workspace_path / "templates_themes"
-        if templates_themes_src.exists() and any(templates_themes_src.iterdir()):
-            templates_themes_dest = self.mybb_root / "inc" / "plugins" / codename / "templates_themes"
-            files, dirs, backups = self._overlay_directory(
-                templates_themes_src, templates_themes_dest, codename
-            )
-            all_files.extend(files)
-            all_dirs.extend(dirs)
-            all_backups.extend(backups)
 
         # Calculate totals
         total_size = sum(f.get("size", 0) for f in all_files)
@@ -284,12 +379,14 @@ class PluginInstaller:
 
                 # Track directories we need to create
                 # Check each parent dir - if it doesn't exist, we're creating it
+                # SAFETY: Only track plugin-specific directories, never core MyBB dirs
                 for parent in reversed(dest_file.parents):
                     if parent == dest_dir:
                         continue  # Skip the base MyBB dir
                     if not parent.exists():
                         parent_str = str(parent)
-                        if parent_str not in dirs_created:
+                        # CRITICAL: Only track if this is a plugin-specific directory
+                        if parent_str not in dirs_created and self._is_safe_to_track(parent, codename):
                             dirs_created.append(parent_str)
 
                 # Create parent directories
@@ -312,6 +409,52 @@ class PluginInstaller:
                 file_info = _get_file_metadata(dest_file, source_path=src_file)
                 file_info["relative_path"] = str(rel_path)
                 files_deployed.append(file_info)
+
+        return files_deployed, dirs_created, backups_created
+
+    def _overlay_file(
+        self,
+        src_file: Path,
+        dest_dir: Path,
+        codename: str
+    ) -> Tuple[List[Dict[str, Any]], List[str], List[str]]:
+        """Copy a single file to destination, tracking changes with full metadata.
+
+        Used for root-level files in the workspace (e.g., standalone PHP pages).
+
+        Args:
+            src_file: Source file to copy
+            dest_dir: Destination directory to copy to
+            codename: Plugin codename (for backup organization)
+
+        Returns:
+            Tuple of:
+            - List of file metadata dicts (single file)
+            - List of directories created (empty for root files)
+            - List of backup file paths created
+        """
+        files_deployed: List[Dict[str, Any]] = []
+        dirs_created: List[str] = []
+        backups_created: List[str] = []
+
+        dest_file = dest_dir / src_file.name
+
+        # Backup existing file OUTSIDE TestForum
+        if dest_file.exists():
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            backup_dir = self.backup_root / codename / timestamp
+            backup_dir.mkdir(parents=True, exist_ok=True)
+            backup_file = backup_dir / src_file.name
+            shutil.copy2(dest_file, backup_file)
+            backups_created.append(str(backup_file))
+
+        # Copy file
+        shutil.copy2(src_file, dest_file)
+
+        # Get full metadata for the deployed file
+        file_info = _get_file_metadata(dest_file, source_path=src_file)
+        file_info["relative_path"] = src_file.name
+        files_deployed.append(file_info)
 
         return files_deployed, dirs_created, backups_created
 
@@ -416,6 +559,14 @@ class PluginInstaller:
 
         for dir_path_str in dirs_sorted:
             dir_path = Path(dir_path_str)
+
+            # CRITICAL SAFETY CHECK: Never delete protected directories
+            if self._is_protected_directory(dir_path):
+                result["warnings"].append(
+                    f"BLOCKED: Attempted to delete protected directory: {dir_path_str}"
+                )
+                continue
+
             if dir_path.exists() and dir_path.is_dir():
                 # SAFETY: Only delete if empty (our files should already be gone)
                 try:

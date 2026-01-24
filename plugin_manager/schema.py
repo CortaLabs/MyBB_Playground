@@ -234,13 +234,13 @@ def validate_meta(meta_dict: Dict[str, Any]) -> tuple[bool, List[str]]:
         version = meta_dict["version"]
         if not isinstance(version, str):
             errors.append("version must be a string")
-        elif not re.match(r"^\d+\.\d+\.\d+$", version):
-            errors.append("version must follow semantic versioning (e.g., '1.0.0')")
+        elif not re.match(r"^\d+(\.\d+)*$", version):
+            errors.append("version must be numeric (e.g., '1.0' or '1.0.0')")
 
     # Validate visibility enum
     if "visibility" in meta_dict:
-        if meta_dict["visibility"] not in ["public", "private"]:
-            errors.append("visibility must be 'public' or 'private'")
+        if meta_dict["visibility"] not in ["public", "private", "forked", "imported"]:
+            errors.append("visibility must be 'public', 'private', 'forked', or 'imported'")
 
     # Validate hooks array structure
     if "hooks" in meta_dict:

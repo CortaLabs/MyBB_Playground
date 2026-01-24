@@ -1,7 +1,7 @@
 # ============================================
 # MyBB Playground - Comprehensive .gitignore
 # ============================================
-
+third_party_plugins
 # Scribe project files
 .scribe/
 

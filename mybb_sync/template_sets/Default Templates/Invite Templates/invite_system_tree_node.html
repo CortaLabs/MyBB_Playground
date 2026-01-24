@@ -1,0 +1,13 @@
+<li>
+    <div class="tree-node {$node_class}" data-uid="{$user['uid']}" onclick="highlightPath(this)">
+        {$toggle}
+        <if $user['avatar'] then>
+            <img src="{$user['avatar']}" alt="" class="node-avatar" />
+        </if>
+        <a href="{$mybb->settings['bburl']}/member.php?action=profile&amp;uid={$user['uid']}" class="node-username">{$user['username']}</a>
+        <span class="node-usergroup">({$usergroup_name})</span>
+        {$referral_badge}
+        <span class="node-stats">{$referrals_text}</span>
+    </div>
+    {$children_html}
+</li>

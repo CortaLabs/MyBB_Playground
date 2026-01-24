@@ -416,6 +416,78 @@ Pull updates from remote into plugin_manager/plugins/public/my_plugin
 
 ---
 
+### mybb_plugin_export
+
+**Purpose:** Export a workspace plugin to a distributable ZIP package
+
+**Parameters:**
+
+| Name | Type | Required | Default | Description |
+|------|------|----------|---------|-------------|
+| codename | string | Yes | - | Plugin codename to export |
+| output_path | string | No | `exports/{codename}_v{version}.zip` | Output path for zip file |
+| validate | boolean | No | true | Run validation before export |
+
+**Returns:** Markdown with success/failure, files included, zip path
+
+**Behavior:**
+- Creates standard MyBB Mods format with `Upload/` folder structure
+- All MyBB files (inc/plugins/, inc/languages/, jscripts/, images/) are wrapped in Upload/ prefix
+- README.md stays at zip root (not inside Upload/)
+- Tests directory stays at zip root (not inside Upload/)
+- Validates language files if validate=True
+- Supports admin language files: `Upload/inc/languages/english/admin/{codename}.lang.php`
+
+**Example:**
+```
+Export my_plugin to default location with validation
+mybb_plugin_export(codename="my_plugin")
+
+Export to custom path without validation
+mybb_plugin_export(codename="my_plugin", output_path="/tmp/release.zip", validate=False)
+```
+
+---
+
+### mybb_plugin_import
+
+**Purpose:** Import a third-party plugin into the workspace
+
+**Parameters:**
+
+| Name | Type | Required | Default | Description |
+|------|------|----------|---------|-------------|
+| source_path | string | Yes | - | Path to plugin file or directory |
+| codename | string | No | (auto-detected) | Override codename (auto-detected from filename) |
+| category | string | No | imported | Workspace category: `imported`, `forked`, `public`, `private` |
+
+**Returns:** Markdown with workspace path, files copied, meta.json contents, next steps
+
+**Behavior:**
+- Auto-detects `Upload/` subfolder in distributions (standard MyBB Mods format)
+- Generates `meta.json` from plugin's `_info()` function
+- Supports single PHP files or directory structures
+- Categories:
+  - `imported` — Third-party plugins (gitignored)
+  - `forked` — Customized third-party (can have own git repo)
+  - `public` — Your public plugins
+  - `private` — Your private plugins
+
+**Example:**
+```
+Import a plugin directory
+mybb_plugin_import(source_path="third_party_plugins/some_plugin")
+
+Import a single PHP file as a forked plugin
+mybb_plugin_import(source_path="path/to/plugin.php", category="forked")
+```
+
+**Notes:**
+- After import, use `/migrate-plugin` command for template extraction guidance
+- Imported plugins need manual review for disk-based template migration
+
+---
+
 ## Lifecycle Comparison
 
 ### Cache-Only Operations

@@ -1,0 +1,12 @@
+<tr>
+    <td class="trow1">
+        <span class="invite-code-clickable" onclick="copyInviteCode('{$code['code']}', this)" title="Click to copy">
+            {$code['code']}
+        </span>
+    </td>
+    <td class="trow1">{$target_group_name}</td>
+    <td class="trow1">{$code['current_uses']} / {$code['max_uses']}</td>
+    <td class="trow1">{$created_formatted}</td>
+    <td class="trow1">{$expires_formatted}</td>
+    <td class="trow1">{$revoke_action}</td>
+</tr>

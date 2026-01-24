@@ -133,6 +133,46 @@ pm.deactivate_full("my_plugin", uninstall=True)
 pm.uninstall_plugin("my_plugin")
 ```
 
+## Import/Export
+
+### Exporting Plugins
+
+Export workspace plugins for distribution:
+
+```python
+mybb_plugin_export(codename="my_plugin")
+```
+
+Creates a ZIP with standard MyBB Mods structure:
+- `Upload/inc/plugins/` — Plugin PHP files
+- `Upload/inc/languages/` — Language files (including admin/)
+- `Upload/jscripts/` — JavaScript (if any)
+- `Upload/images/` — Images (if any)
+- `README.md` — Documentation (at root)
+
+The `Upload/` folder structure is the standard format expected by MyBB forum administrators. They extract the ZIP and upload the contents of the `Upload/` folder to their forum root.
+
+### Importing Third-Party Plugins
+
+Import external plugins into workspace for development:
+
+```python
+mybb_plugin_import(source_path="path/to/plugin", category="forked")
+```
+
+**Categories:**
+- `imported` — Third-party plugins (gitignored, temporary)
+- `forked` — Customized third-party (can have own git repo)
+- `public` — Your public plugins
+- `private` — Your private plugins
+
+**After importing**, run `/migrate-plugin` for guidance on:
+- Extracting embedded templates to disk (`workspace/templates/`)
+- Organizing language files
+- Updating PHP for disk-based template loading
+
+This migration is necessary because imported plugins typically embed templates directly in PHP code, while the Plugin Manager workflow uses disk-based templates with automatic sync.
+
 ## Documentation Sections
 
 - **[Workspace Management](workspace.md)** — Directory structure, meta.json schema, validation

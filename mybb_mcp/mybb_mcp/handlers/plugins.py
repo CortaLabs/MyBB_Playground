@@ -13,10 +13,97 @@ import re
 import sys
 import json
 import logging
+import shutil
+import tempfile
+import zipfile
 from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+
+def detect_embedded_templates(php_content: str) -> dict:
+    """Detect embedded templates in plugin PHP code that need manual conversion.
+
+    Scans for common patterns where plugins embed templates directly in PHP
+    instead of using separate template files.
+
+    Args:
+        php_content: The PHP source code to analyze
+
+    Returns:
+        Dictionary with detection results:
+        - has_embedded: bool - True if embedded templates detected
+        - patterns_found: list - List of pattern descriptions
+        - template_names: list - Extracted template names if detectable
+        - recommendations: list - Suggested actions
+    """
+    result = {
+        "has_embedded": False,
+        "patterns_found": [],
+        "template_names": [],
+        "recommendations": []
+    }
+
+    # Pattern 1: $templates->set() - Direct template insertion
+    templates_set = re.findall(
+        r"\$templates->set\s*\(\s*['\"]([^'\"]+)['\"]",
+        php_content
+    )
+    if templates_set:
+        result["has_embedded"] = True
+        result["patterns_found"].append(f"`$templates->set()` calls ({len(templates_set)} templates)")
+        result["template_names"].extend(templates_set)
+
+    # Pattern 2: $db->insert_query("templates" or insert_query_multiple - Raw DB insert
+    db_insert_templates = re.findall(
+        r"\$db->insert_query(?:_multiple)?\s*\(\s*['\"]templates['\"]",
+        php_content
+    )
+    if db_insert_templates:
+        result["has_embedded"] = True
+        result["patterns_found"].append(f"Direct DB template inserts ({len(db_insert_templates)} found)")
+        # Try to extract template names from nearby 'title' => 'name' patterns
+        title_matches = re.findall(
+            r"['\"]title['\"]\s*=>\s*['\"]([^'\"]+)['\"]",
+            php_content
+        )
+        for title in title_matches:
+            if title not in result["template_names"]:
+                result["template_names"].append(title)
+
+    # Pattern 3: find_replace_templatesets() - Template modification
+    find_replace = re.findall(
+        r"find_replace_templatesets\s*\(\s*['\"]([^'\"]+)['\"]",
+        php_content
+    )
+    if find_replace:
+        result["has_embedded"] = True
+        result["patterns_found"].append(f"`find_replace_templatesets()` calls ({len(find_replace)} templates)")
+        result["template_names"].extend(find_replace)
+
+    # Pattern 4: $mybb->settings check with template variable injection
+    # This is common but less problematic - just note it
+    settings_template = re.findall(
+        r"\$templates->get\s*\(\s*['\"]([^'\"]+)['\"]",
+        php_content
+    )
+    # This is normal usage, don't flag
+
+    # Remove duplicates from template names
+    result["template_names"] = list(set(result["template_names"]))
+
+    # Generate recommendations
+    if result["has_embedded"]:
+        result["recommendations"] = [
+            "Extract embedded templates to `templates/` directory in workspace",
+            "Template files should be named `{codename}_{template_name}.html`",
+            "Remove `$templates->set()` calls from `_activate()` - installer handles templates",
+            "Update `_deactivate()` to not delete templates (installer handles cleanup)",
+            "See CLAUDE.md 'Plugin Templates' section for disk-first workflow"
+        ]
+
+    return result
 
 
 def _get_plugin_manager_db_path() -> Path:
@@ -1248,6 +1335,460 @@ async def handle_delete_theme(
         return f"Error deleting theme: {e}"
 
 
+# ==================== Export/Import Handlers ====================
+
+async def handle_plugin_export(
+    args: dict, db: Any, config: Any, sync_service: Any
+) -> str:
+    """Export a plugin as a distributable ZIP package.
+
+    Args:
+        args: Export configuration including:
+            - codename (required): Plugin codename
+            - output_path (optional): Where to save ZIP (default: exports/{codename}_v{version}.zip)
+            - validate (optional): Whether to validate before export (default: True)
+        db: MyBBDatabase instance (unused)
+        config: Server configuration
+        sync_service: Disk sync service instance (unused)
+
+    Returns:
+        Markdown formatted export result
+    """
+    # Add plugin_manager to path
+    repo_root = Path(__file__).resolve().parent.parent.parent.parent
+    if str(repo_root) not in sys.path:
+        sys.path.insert(0, str(repo_root))
+
+    try:
+        from plugin_manager.workspace import PluginWorkspace
+        from plugin_manager.database import ProjectDatabase
+        from plugin_manager.packager import PluginPackager
+
+        # Get required args
+        codename = args.get("codename")
+        if not codename:
+            return "# Error: Missing Required Parameter\n\n**Error:** `codename` is required"
+
+        validate = args.get("validate", True)
+        output_path = args.get("output_path")
+
+        # Initialize workspace and packager
+        db_path = _get_plugin_manager_db_path()
+        if not db_path.exists():
+            return f"# Error: Plugin Manager Not Initialized\n\n**Error:** Database not found at `{db_path}`"
+
+        project_db = ProjectDatabase(db_path)
+        workspace_root = repo_root / "plugin_manager" / "plugins"
+        workspace = PluginWorkspace(workspace_root=workspace_root)
+        packager = PluginPackager(workspace=workspace, db=project_db)
+
+        # Validate if requested
+        if validate:
+            validation_result = packager.validate_for_export(codename)
+            if not validation_result["valid"]:
+                errors_list = "\n".join(f"- ❌ {err}" for err in validation_result["errors"])
+                warnings_list = ""
+                if validation_result["warnings"]:
+                    warnings_list = "\n\n## Warnings\n" + "\n".join(
+                        f"- ⚠️ {warn}" for warn in validation_result["warnings"]
+                    )
+                return (
+                    f"# Export Validation Failed: {codename}\n\n"
+                    f"## Errors\n{errors_list}{warnings_list}\n\n"
+                    f"Fix these errors before exporting, or use `validate=False` to skip validation."
+                )
+
+            # If valid but has warnings, include them in the output
+            meta = validation_result.get("meta", {})
+            version = meta.get("version", "0.0.0")
+        else:
+            # Get version without full validation
+            workspace_path = workspace.get_workspace_path(codename)
+            if not workspace_path:
+                return f"# Error: Plugin Not Found\n\n**Error:** Plugin `{codename}` not found in workspace"
+
+            meta_path = workspace_path / "meta.json"
+            if meta_path.exists():
+                import json
+                with open(meta_path) as f:
+                    meta = json.load(f)
+                version = meta.get("version", "0.0.0")
+            else:
+                version = "0.0.0"
+
+        # Determine output path
+        if not output_path:
+            exports_dir = repo_root / "exports"
+            exports_dir.mkdir(exist_ok=True)
+            output_path = exports_dir / f"{codename}_v{version}.zip"
+        else:
+            output_path = Path(output_path)
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+
+        # Create the ZIP
+        result = packager.create_plugin_zip(
+            codename=codename,
+            output_path=output_path
+        )
+
+        # Format response
+        if result.get("success"):
+            files_list = "\n".join(f"- `{f}`" for f in result.get("files_included", []))
+            warnings_section = ""
+            if result.get("warnings"):
+                warnings_list = "\n".join(f"- ⚠️ {w}" for w in result["warnings"])
+                warnings_section = f"\n\n## Warnings\n{warnings_list}"
+
+            return (
+                f"# ✅ Plugin Exported Successfully\n\n"
+                f"**Plugin:** `{codename}`\n"
+                f"**Version:** `{version}`\n"
+                f"**Output:** `{result['zip_path']}`\n\n"
+                f"## Files Included\n{files_list}{warnings_section}\n\n"
+                f"## Next Steps\n"
+                f"- Share the ZIP file with users\n"
+                f"- Upload to MyBB Extend or GitHub releases\n"
+                f"- Users can extract to MyBB root to install"
+            )
+        else:
+            error_msg = result.get("error", "Unknown error")
+            warnings_section = ""
+            if result.get("warnings"):
+                warnings_list = "\n".join(f"- ⚠️ {w}" for w in result["warnings"])
+                warnings_section = f"\n\n## Warnings\n{warnings_list}"
+            return f"# ❌ Export Failed\n\n**Error:** {error_msg}{warnings_section}"
+
+    except ImportError as e:
+        return f"# Error: Plugin Manager Not Available\n\n**Error:** {str(e)}"
+    except Exception as e:
+        logger.exception(f"Error exporting plugin {args.get('codename')}")
+        return f"# Error Exporting Plugin\n\n**Error:** {str(e)}"
+
+
+# ==================== Import Handler ====================
+
+
+def generate_meta_from_info(php_content: str, codename: str, visibility: str = "imported") -> dict:
+    """Extract plugin info from _info() function using regex.
+
+    Args:
+        php_content: The PHP source code containing _info() function
+        codename: Plugin codename to use
+        visibility: Workspace visibility category (imported, forked, public, private)
+
+    Returns:
+        Dictionary matching meta.json schema with extracted info
+    """
+    meta = {
+        "codename": codename,
+        "name": codename,
+        "display_name": codename,
+        "version": "1.0.0",
+        "author": "Unknown",
+        "description": "",
+        "visibility": visibility,
+    }
+
+    # Extract common patterns from _info() return array
+    patterns = {
+        "name": r"['\"]name['\"]\s*=>\s*['\"]([^'\"]+)['\"]",
+        "version": r"['\"]version['\"]\s*=>\s*['\"]([^'\"]+)['\"]",
+        "author": r"['\"]author['\"]\s*=>\s*['\"]([^'\"]+)['\"]",
+        "description": r"['\"]description['\"]\s*=>\s*['\"]([^'\"]+)['\"]",
+    }
+
+    for key, pattern in patterns.items():
+        match = re.search(pattern, php_content)
+        if match:
+            meta[key] = match.group(1)
+            # Keep display_name in sync with name
+            if key == "name":
+                meta["display_name"] = match.group(1)
+
+    return meta
+
+
+async def handle_plugin_import(
+    args: dict, db: Any, config: Any, sync_service: Any
+) -> str:
+    """Import a third-party plugin into workspace for development.
+
+    Copies plugin files into the workspace directory structure and generates
+    a basic meta.json from the plugin's _info() function.
+
+    Args:
+        args: Import configuration including:
+            - source_path (required): Path to plugin (file or directory)
+            - codename (optional): Target codename (auto-detected if not provided)
+            - category (optional): Workspace category (imported, forked, public, private)
+        db: MyBBDatabase instance (unused)
+        config: Server configuration
+        sync_service: Disk sync service instance (unused)
+
+    Returns:
+        Markdown formatted import result
+    """
+    from datetime import datetime
+
+    # Add plugin_manager to path
+    repo_root = Path(__file__).resolve().parent.parent.parent.parent
+    if str(repo_root) not in sys.path:
+        sys.path.insert(0, str(repo_root))
+
+    temp_dir = None  # Track temp directory for cleanup (defined before try for exception handling)
+
+    try:
+        # Get required args
+        source_path_str = args.get("source_path")
+        if not source_path_str:
+            return "# Error: Missing Required Parameter\n\n**Error:** `source_path` is required"
+
+        source_path = Path(source_path_str)
+        if not source_path.is_absolute():
+            # Try relative to repo root
+            source_path = repo_root / source_path
+
+        if not source_path.exists():
+            return f"# Error: Source Not Found\n\n**Error:** Source path does not exist: `{source_path_str}`"
+
+        codename = args.get("codename")
+        category = args.get("category", "imported")
+
+        # Handle zip files - extract to temp and convert to directory path
+        if source_path.is_file() and source_path.suffix == ".zip":
+            temp_dir = tempfile.mkdtemp(prefix="mybb_import_")
+            try:
+                with zipfile.ZipFile(source_path, 'r') as zf:
+                    zf.extractall(temp_dir)
+
+                # Find the extracted content - could be at root or in a subfolder
+                temp_path = Path(temp_dir)
+                extracted_items = list(temp_path.iterdir())
+
+                # If single directory extracted, use that as source
+                if len(extracted_items) == 1 and extracted_items[0].is_dir():
+                    source_path = extracted_items[0]
+                else:
+                    source_path = temp_path
+
+                # Auto-detect codename from zip filename if not provided
+                if not codename:
+                    # Clean up zip filename: "DVZ Shoutbox_#15_stable.zip" -> "dvz_shoutbox"
+                    zip_name = source_path_str.rsplit("/", 1)[-1].rsplit("\\", 1)[-1]
+                    zip_name = zip_name.replace(".zip", "")
+                    # Take first part before version markers
+                    zip_name = re.split(r"[_#\-]\d|_stable|_v\d", zip_name, 1)[0]
+                    codename = re.sub(r"[^a-z0-9_]", "_", zip_name.lower()).strip("_")
+
+            except zipfile.BadZipFile:
+                shutil.rmtree(temp_dir, ignore_errors=True)
+                return f"# Error: Invalid Zip File\n\n**Error:** `{source_path_str}` is not a valid zip file."
+            except Exception as e:
+                shutil.rmtree(temp_dir, ignore_errors=True)
+                return f"# Error: Zip Extraction Failed\n\n**Error:** {str(e)}"
+
+        # Detect Upload/ subfolder (standard MyBB Mods distribution format)
+        # Check case-insensitively since some plugins use UPLOAD, Upload, or upload
+        if source_path.is_dir():
+            upload_subdir = None
+            for item in source_path.iterdir():
+                if item.is_dir() and item.name.lower() == "upload":
+                    upload_subdir = item
+                    break
+            if upload_subdir:
+                source_path = upload_subdir  # Use Upload/ as actual source
+
+        # Validate category
+        valid_categories = ["imported", "forked", "public", "private"]
+        if category not in valid_categories:
+            return f"# Error: Invalid Category\n\n**Error:** Category must be one of: {', '.join(valid_categories)}"
+
+        # Detect source format and find main PHP file
+        main_php_path = None
+        source_files = []
+
+        if source_path.is_file():
+            if source_path.suffix == ".php":
+                # Single file plugin
+                main_php_path = source_path
+                source_files = [source_path]
+                codename = codename or source_path.stem
+            else:
+                return f"# Error: Unsupported File Type\n\n**Error:** Expected `.php` or `.zip` file, got `{source_path.suffix}`"
+        elif source_path.is_dir():
+            # Directory - find main PHP file containing _info() function
+            php_files = list(source_path.glob("*.php"))
+            if not php_files:
+                # Check for inc/plugins/*.php pattern
+                inc_plugins = list(source_path.glob("inc/plugins/*.php"))
+                if inc_plugins:
+                    php_files = inc_plugins
+
+            if not php_files:
+                return f"# Error: No PHP Files Found\n\n**Error:** No PHP files found in `{source_path}`"
+
+            # Find the main plugin file (contains _info() function)
+            for php_file in php_files:
+                try:
+                    content = php_file.read_text(encoding="utf-8", errors="replace")
+                    if re.search(r"function\s+\w+_info\s*\(", content):
+                        main_php_path = php_file
+                        break
+                except Exception:
+                    continue
+
+            if not main_php_path:
+                # Fall back to first PHP file
+                main_php_path = php_files[0]
+                logger.warning(f"No _info() function found, using first PHP file: {main_php_path}")
+
+            # Collect all files to copy
+            source_files = list(source_path.rglob("*"))
+            codename = codename or main_php_path.stem
+        else:
+            return f"# Error: Invalid Source\n\n**Error:** Source path is neither a file nor directory: `{source_path}`"
+
+        # Sanitize codename
+        codename = re.sub(r"[^a-z0-9_]", "_", codename.lower())
+
+        # Create workspace directory
+        workspace_path = repo_root / "plugin_manager" / "plugins" / category / codename
+
+        if workspace_path.exists():
+            return (
+                f"# Error: Workspace Already Exists\n\n"
+                f"**Error:** Plugin workspace already exists at `{workspace_path}`\n\n"
+                f"**Options:**\n"
+                f"- Use a different codename: `mybb_plugin_import(source_path=\"...\", codename=\"new_name\")`\n"
+                f"- Delete existing workspace first: `mybb_delete_plugin(codename=\"{codename}\")`"
+            )
+
+        # Create workspace directory (structure comes from source, not predefined)
+        workspace_path.mkdir(parents=True, exist_ok=True)
+
+        # Copy files
+        files_copied = []
+
+        if source_path.is_file():
+            # Single file - copy to inc/plugins/
+            dest = workspace_path / "inc" / "plugins" / source_path.name
+            shutil.copy2(source_path, dest)
+            files_copied.append(f"inc/plugins/{source_path.name}")
+        else:
+            # Directory - copy preserving EXACT source structure (no reorganization)
+            for src_file in source_files:
+                if src_file.is_file():
+                    # Calculate relative path from source directory
+                    rel_path = src_file.relative_to(source_path)
+
+                    # Skip common non-plugin files
+                    skip_patterns = ["README", "readme", "CHANGELOG", "changelog", "LICENSE", "license"]
+                    if any(rel_path.name.startswith(p) for p in skip_patterns):
+                        continue
+
+                    # Preserve exact structure - just copy to same relative path
+                    dest = workspace_path / rel_path
+                    dest.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(src_file, dest)
+                    files_copied.append(str(rel_path))
+
+        # Generate meta.json from _info()
+        template_detection = None
+        try:
+            php_content = main_php_path.read_text(encoding="utf-8", errors="replace")
+            meta = generate_meta_from_info(php_content, codename, category)
+            # Detect embedded templates that need manual conversion
+            template_detection = detect_embedded_templates(php_content)
+        except Exception as e:
+            logger.warning(f"Failed to read main PHP for meta extraction: {e}")
+            meta = {
+                "codename": codename,
+                "name": codename,
+                "version": "1.0.0",
+                "author": "Unknown",
+                "description": "",
+                "visibility": category,
+            }
+
+        # Add import tracking fields
+        meta["import_source"] = str(source_path)
+        meta["import_date"] = datetime.now().isoformat()
+
+        # Write meta.json
+        meta_path = workspace_path / "meta.json"
+        meta_path.write_text(json.dumps(meta, indent=2))
+
+        # Register in database so mybb_plugin_install can find it
+        from plugin_manager.database import ProjectDatabase
+        project_db = ProjectDatabase(repo_root / ".plugin_manager" / "projects.db")
+        project_db.add_project(
+            codename=codename,
+            display_name=meta.get("name", codename),
+            workspace_path=str(workspace_path),
+            type="plugin",
+            visibility=category,
+            status="imported",
+            version=meta.get("version", "1.0.0"),
+            description=meta.get("description", ""),
+            author=meta.get("author", "Unknown")
+        )
+
+        # Clean up temp directory if we extracted from zip
+        if temp_dir:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+
+        # Format response
+        files_list = "\n".join(f"- `{f}`" for f in files_copied[:20])  # Limit to 20 files in output
+        if len(files_copied) > 20:
+            files_list += f"\n- ... and {len(files_copied) - 20} more files"
+
+        # Build template warning section
+        template_warning = ""
+        if template_detection and template_detection["has_embedded"]:
+            template_warning = "\n## ⚠️ Embedded Templates Detected\n\n"
+            template_warning += "**This plugin has templates embedded in PHP code that need manual conversion.**\n\n"
+            template_warning += "**Patterns Found:**\n"
+            for pattern in template_detection["patterns_found"]:
+                template_warning += f"- {pattern}\n"
+            if template_detection["template_names"]:
+                template_warning += f"\n**Templates to Extract ({len(template_detection['template_names'])}):**\n"
+                for tpl_name in template_detection["template_names"][:15]:
+                    template_warning += f"- `{tpl_name}`\n"
+                if len(template_detection["template_names"]) > 15:
+                    template_warning += f"- ... and {len(template_detection['template_names']) - 15} more\n"
+            template_warning += "\n**Recommendations:**\n"
+            for rec in template_detection["recommendations"]:
+                template_warning += f"- {rec}\n"
+            template_warning += "\n"
+
+        return (
+            f"# Plugin Imported Successfully\n\n"
+            f"**Codename:** `{codename}`\n"
+            f"**Name:** {meta.get('name', codename)}\n"
+            f"**Version:** {meta.get('version', '1.0.0')}\n"
+            f"**Author:** {meta.get('author', 'Unknown')}\n"
+            f"**Workspace:** `{workspace_path}`\n\n"
+            f"## Files Copied ({len(files_copied)} total)\n{files_list}\n\n"
+            f"{template_warning}"
+            f"## Meta.json Created\n"
+            f"```json\n{json.dumps(meta, indent=2)}\n```\n\n"
+            f"## Next Steps\n"
+            f"1. **Review the imported files** in `{workspace_path}`\n"
+            f"2. **Test the plugin:** `mybb_plugin_install(codename=\"{codename}\")`\n"
+            f"3. {'**IMPORTANT: Extract embedded templates** before production use' if template_detection and template_detection['has_embedded'] else 'Check for any issues in the PHP code'}\n"
+        )
+
+    except ImportError as e:
+        if temp_dir:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+        return f"# Error: Plugin Manager Not Available\n\n**Error:** {str(e)}"
+    except Exception as e:
+        if temp_dir:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+        logger.exception(f"Error importing plugin from {args.get('source_path')}")
+        return f"# Error Importing Plugin\n\n**Error:** {str(e)}"
+
+
 # ==================== Handler Registry ====================
 
 PLUGIN_HANDLERS = {
@@ -1269,4 +1810,6 @@ PLUGIN_HANDLERS = {
     "mybb_plugin_uninstall": handle_plugin_uninstall,
     "mybb_plugin_deploy": handle_plugin_deploy,
     "mybb_plugin_status": handle_plugin_status,
+    "mybb_plugin_export": handle_plugin_export,
+    "mybb_plugin_import": handle_plugin_import,
 }

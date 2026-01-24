@@ -1,0 +1,75 @@
+<div class="invite-form">
+<table border="0" cellspacing="{$theme['borderwidth']}" cellpadding="{$theme['tablespace']}" class="tborder">
+<thead><tr><td class="thead" colspan="2"><strong>{$lang->invite_generate_code}</strong></td></tr></thead>
+<tbody>
+<tr><td class="trow1" colspan="2">
+{$error_messages}
+{$pool_status}
+<form action="usercp.php?action=invites" method="post">
+<input type="hidden" name="my_post_key" value="{$mybb->post_code}" />
+<input type="hidden" name="tab" value="generate" />
+<div class="form-group">
+    <label for="target_gid">{$lang->invite_target_group}</label>
+    <select name="target_gid" id="target_gid" required>{$target_group_options}</select>
+</div>
+<div class="form-group">
+    <label for="quantity">{$lang->invite_quantity}</label>
+    <select name="quantity" id="quantity">
+        <option value="1" selected>1 code</option>
+        <option value="3">3 codes</option>
+        <option value="5">5 codes</option>
+        <option value="10">10 codes</option>
+    </select>
+</div>
+<div class="form-group" {$show_vanity}>
+    <label for="prefix">{$lang->invite_vanity_prefix}</label>
+    <div class="form-description">{$lang->invite_vanity_prefix_desc}</div>
+    <input type="text" name="prefix" id="prefix" maxlength="12" pattern="[A-Z0-9_]+" />
+</div>
+<div class="form-group" {$show_multiuse}>
+    <label>{$lang->invite_code_type}</label>
+    <div class="radio-group">
+        <label><input type="radio" name="code_type" value="single" checked /> {$lang->invite_single_use}</label>
+        <label><input type="radio" name="code_type" value="multi" /> {$lang->invite_multi_use}</label>
+    </div>
+    <div id="max_uses_field" style="display:none; margin-top: 10px;">
+        <label for="max_uses">{$lang->invite_max_uses}</label>
+        <input type="number" name="max_uses" id="max_uses" min="2" max="100" value="5" />
+    </div>
+</div>
+<div class="form-group">
+    <label>{$lang->invite_expiration}</label>
+    <div class="radio-group">
+        <label><input type="radio" name="expiry_option" value="never" {$expiry_never_checked} /> {$lang->invite_never_expires}</label>
+        <label><input type="radio" name="expiry_option" value="7" {$expiry_7_checked} /> {$lang->invite_7_days}</label>
+        <label><input type="radio" name="expiry_option" value="30" {$expiry_30_checked} /> {$lang->invite_30_days}</label>
+        <label><input type="radio" name="expiry_option" value="custom" {$expiry_custom_checked} /> {$lang->invite_custom_days}</label>
+    </div>
+    <div id="custom_days_field" style="display:none; margin-top: 10px;">
+        <input type="number" name="custom_days" min="1" max="365" value="14" />
+    </div>
+</div>
+<div class="form-group">
+    <label for="label">{$lang->invite_label}</label>
+    <input type="text" name="label" id="label" maxlength="100" />
+</div>
+<div class="form-group">
+    <label for="notes">{$lang->invite_notes}</label>
+    <textarea name="notes" id="notes" maxlength="255"></textarea>
+</div>
+<div class="form-group" style="text-align: center;">
+    <button type="submit" class="submit-btn">{$lang->invite_generate_button}</button>
+</div>
+</form>
+</td></tr>
+</tbody>
+</table>
+</div>
+<script>
+document.querySelector('input[name="code_type"][value="multi"]').addEventListener('change', function() {
+    document.getElementById('max_uses_field').style.display = this.checked ? 'block' : 'none';
+});
+document.querySelector('input[name="expiry_option"][value="custom"]').addEventListener('change', function() {
+    document.getElementById('custom_days_field').style.display = this.checked ? 'block' : 'none';
+});
+</script>

@@ -1,0 +1,57 @@
+<html>
+<head>
+<title>{$page_title} - {$board_name}</title>
+{$headerinclude}
+<style>
+.invite-application-form { max-width: 700px; margin: 0 auto; }
+.invite-application-form .form_field { margin-bottom: 15px; }
+.invite-application-form .form_field label { display: block; font-weight: bold; margin-bottom: 5px; }
+.invite-application-form .form_field .field_description { font-size: 12px; color: #666; margin-bottom: 5px; }
+.invite-application-form .form_field.error input,
+.invite-application-form .form_field.error textarea,
+.invite-application-form .form_field.error select { border-color: #c00; }
+.invite-application-form .field_error { color: #c00; font-size: 12px; display: block; margin-top: 5px; }
+.invite-application-form .required { color: #c00; }
+.invite-application-form .textbox, .invite-application-form .textarea { width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; }
+.invite-application-form .textarea { min-height: 100px; resize: vertical; }
+.invite-application-form select { padding: 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; min-width: 200px; }
+.invite-application-form .checkbox_group, .invite-application-form .radio_group { padding: 5px 0; }
+.invite-application-form .checkbox_option, .invite-application-form .radio_option { display: block; padding: 3px 0; font-weight: normal; }
+.invite-application-form .alert { padding: 15px; margin-bottom: 20px; border-radius: 4px; }
+.invite-application-form .alert-danger { background: #f8d7da; border: 1px solid #f5c6cb; color: #721c24; }
+.invite-application-form .alert ul { margin: 0; padding-left: 20px; }
+.invite-application-form .submit-button { background: #4caf50; color: white; padding: 12px 30px; border: none; border-radius: 4px; font-size: 16px; cursor: pointer; }
+.invite-application-form .submit-button:hover { background: #45a049; }
+.invite-application-form .submit-button:disabled { background: #ccc; cursor: not-allowed; }
+.invite-application-form .terms-checkbox { margin: 20px 0; padding: 15px; background: #f9f9f9; border-radius: 4px; }
+.invite-application-form .captcha-section { margin: 20px 0; }
+.hp-field { position: absolute; left: -9999px; opacity: 0; height: 0; width: 0; overflow: hidden; }
+</style>
+</head>
+<body>
+{$header}
+<div class="invite-application-form">
+<table border="0" cellspacing="{$theme['borderwidth']}" cellpadding="{$theme['tablespace']}" class="tborder">
+<thead><tr><td class="thead" colspan="2"><strong>{$lang->invite_apply_heading}</strong></td></tr></thead>
+<tbody><tr><td class="trow1" colspan="2">
+<p>{$lang->invite_apply_description}</p>
+{$errors_html}
+<form action="misc.php?action=apply" method="post" id="application_form">
+<input type="hidden" name="my_post_key" value="{$my_post_key}" />
+<input type="hidden" name="form_time" value="{$form_time}" />
+<input type="hidden" name="form_hash" value="{$form_hash}" />
+<div class="hp-field"><label for="{$honeypot_field}">Leave this empty</label><input type="text" name="{$honeypot_field}" id="{$honeypot_field}" value="" autocomplete="off" tabindex="-1" /></div>
+<div class="form_field"><label for="email">{$lang->invite_email} <em class="required">*</em></label><input type="email" name="email" id="email" value="{$email}" class="textbox" required /></div>
+<div class="form_field"><label for="username_requested">{$lang->invite_username_requested} <em class="required">*</em></label><input type="text" name="username_requested" id="username_requested" value="{$username_requested}" class="textbox" required minlength="3" maxlength="30" pattern="[a-zA-Z0-9_]+" /></div>
+{$custom_fields_html}
+<if $captcha_html then><div class="captcha-section">{$captcha_html}</div></if>
+<div class="terms-checkbox"><label class="checkbox_option"><input type="checkbox" name="agree_terms" id="agree_terms" value="1" required /> {$lang->invite_agree_terms} <a href="{$terms_url}" target="_blank">{$lang->invite_view_terms}</a></label></div>
+<div class="form_field" style="text-align: center;"><button type="submit" class="submit-button" id="submit_btn">{$lang->invite_submit_application}</button></div>
+</form>
+</td></tr></tbody>
+</table>
+</div>
+<script>document.getElementById('application_form').addEventListener('submit', function(e) { var btn = document.getElementById('submit_btn'); if(btn.disabled) { e.preventDefault(); return false; } btn.disabled = true; btn.textContent = '{$lang->invite_loading}'; });</script>
+{$footer}
+</body>
+</html>

@@ -91,8 +91,8 @@ class PluginWorkspace:
             path = self.workspace_root / visibility / codename
             return path if path.exists() else None
 
-        # Search both public and private
-        for vis in ["public", "private"]:
+        # Search all visibility directories
+        for vis in ["public", "private", "forked", "imported"]:
             path = self.workspace_root / vis / codename
             if path.exists():
                 return path
@@ -311,8 +311,8 @@ class ThemeWorkspace:
             path = self.workspace_root / visibility / codename
             return path if path.exists() else None
 
-        # Search both public and private
-        for vis in ["public", "private"]:
+        # Search all visibility directories
+        for vis in ["public", "private", "forked", "imported"]:
             path = self.workspace_root / vis / codename
             if path.exists():
                 return path

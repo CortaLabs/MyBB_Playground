@@ -1,0 +1,23 @@
+<html>
+<head>
+<title>{$lang->invite_usercp_title} - {$mybb->settings['bbname']}</title>
+{$headerinclude}
+<style>
+.invite-tabs { display: flex; border-bottom: 2px solid #ddd; margin-bottom: 20px; }
+.invite-tabs a { padding: 12px 20px; text-decoration: none; color: #333; border-bottom: 3px solid transparent; margin-bottom: -2px; }
+.invite-tabs a:hover { background: #f9f9f9; }
+.invite-tabs a.active { border-bottom-color: #4caf50; font-weight: bold; color: #4caf50; }
+</style>
+</head>
+<body>
+{$header}
+<div class="invite-tabs">
+    <a href="usercp.php?action=invites&amp;tab=generate"{$tab_generate_active}>{$lang->invite_tab_generate}</a>
+    <a href="usercp.php?action=invites&amp;tab=codes"{$tab_codes_active}>{$lang->invite_tab_codes}</a>
+    <a href="usercp.php?action=invites&amp;tab=tree"{$tab_tree_active}>{$lang->invite_tab_tree}</a>
+    <a href="usercp.php?action=invites&amp;tab=emails"{$tab_emails_active}>{$lang->invite_tab_emails}</a>
+</div>
+{$invite_page}
+{$footer}
+</body>
+</html>

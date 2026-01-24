@@ -35,6 +35,150 @@
 3. Wait for a new MCP tool to be created
 4. DO NOT improvise with direct DB access
 
+## 🎯 ORCHESTRATION PROTOCOL (MANDATORY)
+**DO NOT SKIP THIS CLAUDE, THIS IS HOW WE GET WORK DONE.**
+
+**You are the orchestrator. Your job is to coordinate subagents, not do all the work yourself.**
+
+### 1. Project-First Workflow
+
+**ALWAYS create or activate a Scribe project before starting work:**
+```python
+# New feature/fix
+mcp__scribe__set_project(name="feature-name", root="/home/austin/projects/MyBB_Playground", ...)
+
+# Existing project
+mcp__scribe__set_project(name="existing-project", root="/home/austin/projects/MyBB_Playground")
+```
+
+- Every non-trivial task needs a project for tracking
+- Pass the project name to ALL subagents in their prompts
+- Check `mcp__scribe__list_projects()` to find existing projects
+
+### 2. Delegate, Don't Browse
+
+**For complex exploration, spawn research agents - don't waste your context browsing files:**
+**We can swarm research**:  SEND MULTIPLE RESEARCHERS OUT FOR COMPLEX SCOPED RESEARCH TASKS. EACH WILL MAKE AN INDIVIDUAL REPORT.
+
+
+| Situation | Action |
+|-----------|--------|
+| Need to understand a system | Spawn `mybb-research-analyst` (haiku (or sonnet if approved)) |
+| Need to find where something is | Spawn `Explore` agent |
+| Trivial lookup (specific file/function) | Use Read/Grep yourself |
+| Multiple areas to investigate | Spawn **parallel research swarms** |
+
+**THIS IS IMPORTANT CLAUDE**
+
+**Research swarms:** When you need lots of context, spawn multiple research agents in parallel:
+```python
+# Parallel research - one message, multiple Task calls
+Task(subagent_type="mybb-research-analyst", model="haiku", prompt="Investigate area A...")
+Task(subagent_type="mybb-research-analyst", model="haiku", prompt="Investigate area B...")
+```
+Always give proper prompts to each agent, they need strict guidance.  Do **NOT** OVERLOAD A SINGLE SUBAGENT.  NO MASSIVE SCOPES FOR ONE SUBAGENT, INCLUDING (AND ESPECIALLY) CODERS.
+
+### 3. Scribe Protocol Flow
+
+**All significant work follows this flow:**
+
+```
+1. RESEARCH    → mybb-research-analyst (haiku) produces research report
+2. ARCHITECT   → mybb-architect (opus) produces ARCHITECTURE_GUIDE.md, PHASE_PLAN.md, CHECKLIST.md
+3. PRE-REVIEW  → mybb-review-agent (optional, for complex designs)
+4. IMPLEMENT   → mybb-coder (sonnet) executes task packages FROM THE CHECKLIST
+5. TEST/REVIEW → mybb-review-agent or manual testing
+```
+
+**You don't always follow it exactly**, but all significant tasks should have:
+- A project for tracking
+- A plan (even if informal)
+- Bounded task packages for coders
+- Verification at the end
+
+### 4. Task List Discipline
+
+**🚨 ALWAYS READ THE PHASE PLAN AND CHECKLIST BEFORE SENDING CODERS 🚨**
+
+You MUST actually read the task content, not just reference it:
+```python
+# Before implementation phase - ACTUALLY READ THESE:
+mcp__scribe__read_file(path=".scribe/docs/dev_plans/{project}/PHASE_PLAN.md", mode="line_range", start_line=X, end_line=Y)
+mcp__scribe__read_file(path=".scribe/docs/dev_plans/{project}/CHECKLIST.md", mode="line_range", start_line=X, end_line=Y)
+```
+
+Extract the specific task package specifications, then include them in the coder prompt.
+
+**Never send one coder to do everything.** Break work into bounded task packages:
+
+| Scope | Approach |
+|-------|----------|
+| 1-2 files, simple change | Single coder, single task |
+| Multiple related changes in same file | Single coder, multiple tasks |
+| Changes across different files (no deps) | **Parallel coders** |
+| Changes with dependencies | **Sequential coders** |
+
+### 5. Subagent Prompting
+
+**Every subagent prompt MUST include:**
+1. **Project name:** `Project: filewatcher-fix`
+2. **Root path:** `Root: /home/austin/projects/MyBB_Playground`
+3. **Clear scope:** What files, what changes, what NOT to touch
+4. **Verification criteria:** How to know the task is complete
+5. **Direct links to the phase plan:** Subagents are expected to understand the entire plan, and their place in it.
+
+**Example coder prompt:**
+```
+## Task: Simplify SyncEventHandler
+
+**Project:** filewatcher-fix
+**Root:** /home/austin/projects/MyBB_Playground
+**PHASE PLAN:** /home/austin/projects/MyBB_Playground/.scribe/docs/dev_plans/filewatcher-fix/PHASE_PLAN.md
+
+### Scope
+- File: `mybb_mcp/mybb_mcp/sync/watcher.py` (lines 22-348)
+- Remove `_queue_for_batch()` and `_flush_batch()` methods
+- Modify handlers to use `put_nowait()` directly
+
+### Out of Scope
+- DO NOT modify FileWatcher class (lines 350+)
+- DO NOT modify service.py
+
+### Verification
+- `grep "get_event_loop" watcher.py` returns nothing
+- All three change handlers updated
+```
+
+### 6. Orchestrator Logging
+
+**You must log decisions and progress:**
+
+```python
+mcp__scribe__append_entry(
+    agent="Orchestrator",
+    message="Decision: Using stop/start instead of pause/resume for watcher",
+    status="plan",
+    meta={"reasoning": {"why": "...", "what": "...", "how": "..."}}
+)
+```
+
+**Log when:**
+- User makes a decision in discussion
+- You choose between approaches
+- A phase completes
+- Something unexpected happens
+
+### 7. Context Conservation
+
+**Your context is precious. Conserve it:**
+- Delegate research to haiku agents (cheap, fast)
+- Don't read large files yourself - have agents summarize
+- Wait for agents to complete (don't poll with TaskOutput)
+- Use append_entry to pass context to downstream agents
+- Summarize agent results for the user, don't paste full output
+
+---
+
 ## Project Overview
 
 AI-assisted MyBB development toolkit providing MCP tools for Claude Code to interact with MyBB installations. The goal is to make MyBB plugin and theme development accessible through natural language.
@@ -45,11 +189,7 @@ AI-assisted MyBB development toolkit providing MCP tools for Claude Code to inte
 - `mybb_sync/` — Template/stylesheet disk sync with live file watching
 - `plugin_manager/` — Plugin/theme workspace with deployment and PHP lifecycle execution
 
-**Notes for the Main Claude Code Orchestrator:**
-- Always try to conserve your context window, delegate fixes and research as needed.  Use the subagents rather than trying to do everything yourself.
-- Always wait for subagents to complete, rather than checking on them.  This is a huge context killer.
-- Append Entry audit notes regularly, as the orchestrator this is a real solid approach to passing context to downstream agents.
-- **Codex CLI note:** Codex does not support subagents in this repo. In Codex, treat “agent roles” as phases you execute yourself and follow `AGENTS.md` for the single-agent protocol and enforcement gates.
+**Codex CLI note:** Codex does not support subagents in this repo. In Codex, treat "agent roles" as phases you execute yourself and follow `AGENTS.md` for the single-agent protocol and enforcement gates.
 
 ## Forbidden Operations
 

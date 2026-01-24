@@ -1402,6 +1402,59 @@ LANGUAGE_TOOLS = [
 ]
 
 
+# ==================== Export/Import Tools ====================
+
+EXPORT_IMPORT_TOOLS = [
+    Tool(
+        name="mybb_plugin_export",
+        description="Export a workspace plugin to a distributable zip package. Creates standard MyBB plugin structure with Upload/ directory.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "codename": {
+                    "type": "string",
+                    "description": "Plugin codename to export"
+                },
+                "output_path": {
+                    "type": "string",
+                    "description": "Output path for zip file. Default: exports/{codename}_v{version}.zip"
+                },
+                "validate": {
+                    "type": "boolean",
+                    "default": True,
+                    "description": "Run validation before export (language files, structure)"
+                }
+            },
+            "required": ["codename"]
+        }
+    ),
+    Tool(
+        name="mybb_plugin_import",
+        description="Import a third-party plugin into the workspace. Copies files and generates basic meta.json from _info() function.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "source_path": {
+                    "type": "string",
+                    "description": "Path to plugin file/directory to import"
+                },
+                "codename": {
+                    "type": "string",
+                    "description": "Override codename (auto-detected from filename if not provided)"
+                },
+                "category": {
+                    "type": "string",
+                    "enum": ["imported", "forked", "public", "private"],
+                    "default": "imported",
+                    "description": "Workspace category"
+                }
+            },
+            "required": ["source_path"]
+        }
+    )
+]
+
+
 # ==================== Combined Tool List ====================
 
 ALL_TOOLS = (
@@ -1418,9 +1471,10 @@ ALL_TOOLS = (
     ADMIN_TOOLS +
     MODERATION_TOOLS +
     USER_TOOLS +
-    LANGUAGE_TOOLS
+    LANGUAGE_TOOLS +
+    EXPORT_IMPORT_TOOLS
 )
 
 # Tool count verification
-EXPECTED_TOOL_COUNT = 104  # Was 103, added mybb_bridge_health_check
+EXPECTED_TOOL_COUNT = 106  # Was 105, added mybb_plugin_import
 assert len(ALL_TOOLS) == EXPECTED_TOOL_COUNT, f"Expected {EXPECTED_TOOL_COUNT} tools, got {len(ALL_TOOLS)}"

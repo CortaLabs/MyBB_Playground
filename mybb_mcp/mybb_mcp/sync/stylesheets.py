@@ -3,6 +3,7 @@
 Handles bidirectional synchronization of MyBB stylesheets between database and disk files.
 """
 
+import asyncio
 from pathlib import Path
 from typing import Any
 
@@ -43,15 +44,15 @@ class StylesheetExporter:
         Raises:
             ValueError: If theme not found
         """
-        # Get theme by name
-        theme = self.db.get_theme_by_name(theme_name)
+        # Get theme by name (run blocking DB call in thread pool to avoid blocking event loop)
+        theme = await asyncio.to_thread(self.db.get_theme_by_name, theme_name)
         if not theme:
             raise ValueError(f"Theme not found: {theme_name}")
 
         tid = theme['tid']
 
-        # Fetch all stylesheets for this theme
-        stylesheets = self._fetch_stylesheets(tid)
+        # Fetch all stylesheets for this theme (run blocking DB call in thread pool)
+        stylesheets = await asyncio.to_thread(self._fetch_stylesheets, tid)
 
         # Export stylesheets
         stats = await self._export_stylesheets(theme_name, stylesheets)

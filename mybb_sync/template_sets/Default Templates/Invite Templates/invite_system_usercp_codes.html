@@ -1,0 +1,93 @@
+<style>
+.invite-code-clickable {
+    cursor: pointer;
+    position: relative;
+    display: inline-block;
+    background: #f5f5f5;
+    color: #333;
+    padding: 6px 10px;
+    border: 1px solid #ccc;
+    border-radius: 3px;
+    font-family: 'Courier New', Consolas, monospace;
+    font-size: 13px;
+    letter-spacing: 0.5px;
+    transition: background 0.2s ease, border-color 0.2s ease;
+}
+.invite-code-clickable:hover {
+    background: #e8f4fc;
+    border-color: #0066a2;
+}
+.invite-code-clickable:active {
+    background: #d0e8f5;
+}
+.invite-code-clickable::after {
+    content: ' ?';
+    font-size: 11px;
+    opacity: 0.6;
+}
+.invite-code-clickable:hover::after {
+    opacity: 1;
+}
+.copy-tooltip {
+    position: absolute;
+    top: -30px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #333;
+    color: #fff;
+    padding: 4px 8px;
+    border-radius: 3px;
+    font-size: 11px;
+    white-space: nowrap;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+    z-index: 1000;
+}
+.copy-tooltip.show {
+    opacity: 1;
+}
+</style>
+<table border="0" cellspacing="{$theme['borderwidth']}" cellpadding="{$theme['tablespace']}" class="tborder">
+<thead><tr><td class="thead" colspan="6"><strong>{$lang->invite_my_codes}</strong></td></tr></thead>
+<thead>
+<tr>
+    <td class="tcat"><strong>{$lang->invite_code}</strong></td>
+    <td class="tcat"><strong>{$lang->invite_target_group}</strong></td>
+    <td class="tcat"><strong>{$lang->invite_uses}</strong></td>
+    <td class="tcat"><strong>{$lang->invite_created}</strong></td>
+    <td class="tcat"><strong>{$lang->invite_expires}</strong></td>
+    <td class="tcat"><strong>{$lang->invite_actions}</strong></td>
+</tr>
+</thead>
+<tbody>
+{$code_rows}
+</tbody>
+</table>
+<div style="text-align: center; margin-top: 15px;">
+    <a href="usercp.php?action=invites&do=export&my_post_key={$mybb->post_code}" class="button">{$lang->invite_export_codes}</a>
+</div>
+<script>
+function copyInviteCode(code, element) {
+    navigator.clipboard.writeText(code).then(function() {
+        // Create or get tooltip
+        var tooltip = element.querySelector('.copy-tooltip');
+        if (!tooltip) {
+            tooltip = document.createElement('span');
+            tooltip.className = 'copy-tooltip';
+            element.appendChild(tooltip);
+        }
+
+        // Show "Copied!" message
+        tooltip.textContent = '✓ Copied to clipboard!';
+        tooltip.classList.add('show');
+
+        // Hide after 2 seconds
+        setTimeout(function() {
+            tooltip.classList.remove('show');
+        }, 2000);
+    }).catch(function(err) {
+        alert('Failed to copy code: ' + err);
+    });
+}
+</script>

@@ -1,0 +1,14 @@
+<div class="invite-tree-stats">
+    <h3>{$lang->invite_tree_stats_title}</h3>
+    <div class="stat-row">
+        <span class="stat-label">{$lang->invite_tree_total_descendants}:</span>
+        <span class="stat-value">{$total_descendants}</span>
+    </div>
+    <if $max_depth > 0 then>
+        <div class="stat-row">
+            <span class="stat-label">{$lang->invite_tree_max_depth}:</span>
+            <span class="stat-value">{$max_depth}</span>
+        </div>
+    </if>
+    {$depth_breakdown}
+</div>

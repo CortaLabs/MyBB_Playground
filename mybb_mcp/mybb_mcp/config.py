@@ -19,7 +19,7 @@ class DatabaseConfig:
     user: str
     password: str
     prefix: str = "mybb_"
-    pool_size: int = 5
+    pool_size: int = 10  # Increased to handle concurrent operations
     pool_name: str = "mybb_pool"
 
 
@@ -60,7 +60,7 @@ def load_config(env_path: Path | None = None) -> MyBBConfig:
         user=os.getenv("MYBB_DB_USER", "mybb_user"),
         password=db_password,
         prefix=os.getenv("MYBB_DB_PREFIX", "mybb_"),
-        pool_size=int(os.getenv("MYBB_DB_POOL_SIZE", "5")),
+        pool_size=int(os.getenv("MYBB_DB_POOL_SIZE", "10")),
         pool_name=os.getenv("MYBB_DB_POOL_NAME", "mybb_pool"),
     )
 
