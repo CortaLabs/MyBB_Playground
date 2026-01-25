@@ -240,3 +240,10 @@ plugin_manager/themes/*/
 !plugin_manager/plugins/public/cortex/
 !plugin_manager/plugins/public/dice_roller/
 # END MYBB-FORGE MANAGED
+
+# ===========================================
+# Sync manifests (generated, not source)
+# ===========================================
+.sync_manifest*.json
+.sync_manifest*.json.tmp
+.sync_manifest*.json.corrupt.*

@@ -9,6 +9,7 @@ from datetime import datetime
 from typing import Any, Optional, List
 
 from ..db import MyBBDatabase
+from ..bridge import MyBBBridgeClient
 from .config import SyncConfig
 from .router import PathRouter
 from .groups import TemplateGroupManager
@@ -17,6 +18,7 @@ from .stylesheets import StylesheetExporter, StylesheetImporter
 from .plugin_templates import PluginTemplateImporter
 from .cache import CacheRefresher
 from .watcher import FileWatcher
+from .manifest import SyncManifest
 
 
 class DiskSyncService:
@@ -215,25 +217,25 @@ class DiskSyncService:
             "plugin": codename,
             "direction": direction,
             "files_synced": [],
+            "files_skipped": [],
             "templates_synced": [],
             "warnings": []
         }
 
         try:
             if direction == 'to_db':
-                # Sync PHP and language files to TestForum
+                # Sync PHP and language files to TestForum (files ONLY, no DB writes)
+                # Templates are copied as regular files - DB sync happens via full_pipeline
                 php_result = self._sync_plugin_php(codename, workspace_path)
                 result["files_synced"].extend(php_result.get("files", []))
+                result["files_skipped"].extend(php_result.get("skipped", []))
                 if php_result.get("warnings"):
                     result["warnings"].extend(php_result["warnings"])
 
-                # Sync templates to database
-                templates_result = self._sync_plugin_templates_to_db(
-                    codename, workspace_path
-                )
-                result["templates_synced"] = templates_result.get("templates", [])
-                if templates_result.get("warnings"):
-                    result["warnings"].extend(templates_result["warnings"])
+                # NOTE: Template DB sync REMOVED from incremental mode.
+                # Incremental sync copies files ONLY. To update templates in DB,
+                # use full_pipeline=True which runs proper PHP lifecycle (_activate).
+                # This prevents bypassing Bridge/MCP/PHP infrastructure.
 
             elif direction == 'from_db':
                 # Export templates from database to workspace
@@ -250,67 +252,254 @@ class DiskSyncService:
 
         return result
 
+    # Files/directories that are workspace-only and should NOT be deployed to TestForum
+    # Mirrors PluginInstaller.WORKSPACE_ONLY from plugin_manager/installer.py
+    # NOTE: templates/ and templates_themes/ ARE copied to TestForum in incremental mode.
+    # They're regular files on disk. DB sync happens only via full_pipeline (PHP lifecycle).
+    WORKSPACE_ONLY = {
+        "meta.json",      # Plugin metadata file
+        "README.md",      # Documentation
+        "readme.md",      # Documentation (lowercase)
+        "README.txt",     # Documentation
+        "readme.txt",     # Documentation (lowercase)
+        "tests",          # Test directory
+        ".git",           # Git repository
+        ".gitignore",     # Git ignore file
+        ".gitkeep",       # Git keep file
+        "__pycache__",    # Python cache
+        ".DS_Store",      # macOS metadata
+        # templates and templates_themes are NOT excluded - they get copied as regular files
+    }
+
+    # Prefixes for files that should never be synced (checked via startswith)
+    WORKSPACE_ONLY_PREFIXES = (
+        ".sync_manifest",  # Sync manifest files
+    )
+
     def _sync_plugin_php(self, codename: str, workspace_path: Path) -> dict[str, Any]:
-        """Sync plugin PHP and language files to TestForum.
+        """Sync entire plugin workspace to TestForum via directory overlay.
+
+        Copies ALL workspace contents to TestForum, except workspace-only files
+        (meta.json, README.md, tests/, .git/, etc.). The workspace structure
+        mirrors MyBB's layout, so most directories overlay directly:
+        - workspace/inc/ -> TestForum/inc/
+        - workspace/admin/ -> TestForum/admin/
+        - workspace/jscripts/ -> TestForum/jscripts/
+        - workspace/images/ -> TestForum/images/
+        - workspace/*.php -> TestForum/*.php (root-level PHP files)
+
+        Special handling for plugin-specific directories (via PluginInstaller.SPECIAL_DEST_DIRS):
+        - workspace/templates/ -> TestForum/inc/plugins/{codename}/templates/
+        - workspace/templates_themes/ -> TestForum/inc/plugins/{codename}/templates_themes/
+
+        Uses PluginInstaller.SPECIAL_DEST_DIRS as canonical source for destination routing.
 
         Args:
             codename: Plugin codename
             workspace_path: Path to plugin workspace
 
         Returns:
-            Dict with synced files and warnings
+            Dict with synced files, directories created, and warnings
         """
-        result = {"files": [], "warnings": []}
+        result = {"files": [], "dirs_created": [], "warnings": []}
+
+        # Initialize manifest for change detection
+        manifest = SyncManifest(workspace_path / ".sync_manifest_plugins.json")
+        result["skipped"] = []
 
         if not self.mybb_root:
             result["warnings"].append("mybb_root not configured")
             return result
 
-        # Copy main PHP file
-        src_php = workspace_path / "src" / f"{codename}.php"
-        if src_php.exists():
-            dest_php = self.mybb_root / "inc" / "plugins" / f"{codename}.php"
-            dest_php.parent.mkdir(parents=True, exist_ok=True)
+        # Import PluginInstaller for SPECIAL_DEST_DIRS (canonical source)
+        from plugin_manager.installer import PluginInstaller
 
-            # Backup if exists
-            if dest_php.exists():
-                backup = dest_php.with_suffix(
-                    f".php.backup.{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-                )
-                shutil.copy2(dest_php, backup)
+        # Iterate over ALL items in workspace and deploy them
+        for item in workspace_path.iterdir():
+            item_name = item.name
 
-            shutil.copy2(src_php, dest_php)
-            result["files"].append(str(dest_php.relative_to(self.mybb_root)))
-        else:
-            result["warnings"].append(f"Plugin PHP not found: {src_php}")
+            # Skip workspace-only files/directories
+            if item_name in self.WORKSPACE_ONLY:
+                continue
 
-        # Copy language files
-        lang_src_dir = workspace_path / "languages" / "english"
-        if lang_src_dir.exists():
-            lang_dest_dir = self.mybb_root / "inc" / "languages" / "english"
-            lang_dest_dir.mkdir(parents=True, exist_ok=True)
+            # Skip files with workspace-only prefixes (e.g., .sync_manifest*)
+            if item_name.startswith(self.WORKSPACE_ONLY_PREFIXES):
+                continue
 
-            for lang_file in lang_src_dir.glob("*.php"):
-                dest = lang_dest_dir / lang_file.name
-                if dest.exists():
-                    backup = dest.with_suffix(
-                        f".php.backup.{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-                    )
-                    shutil.copy2(dest, backup)
-                shutil.copy2(lang_file, dest)
-                result["files"].append(str(dest.relative_to(self.mybb_root)))
+            # Handle directories
+            if item.is_dir():
+                # Check if any files exist in the directory
+                if not any(item.rglob("*")):
+                    continue  # Skip empty directories
+
+                # Determine destination based on special handling or direct overlay
+                # Use PluginInstaller.SPECIAL_DEST_DIRS as canonical source
+                if item_name in PluginInstaller.SPECIAL_DEST_DIRS:
+                    dest_dir = PluginInstaller.SPECIAL_DEST_DIRS[item_name](self.mybb_root, codename)
+                else:
+                    # Direct overlay: workspace/X/ -> TestForum/X/
+                    dest_dir = self.mybb_root / item_name
+
+                self._overlay_directory(item, dest_dir, result, manifest)
+                # Note: result is modified in-place by _overlay_directory
+
+            # Handle root-level files (e.g., standalone PHP pages)
+            elif item.is_file():
+                # Deploy root-level files directly to MyBB root
+                self._overlay_file(item, self.mybb_root, result, manifest)
+                # Note: result is modified in-place by _overlay_file
+
+        # Verify at least one file was synced
+        if not result["files"]:
+            result["warnings"].append(
+                f"No files synced for plugin '{codename}'. "
+                f"Workspace may be empty or contain only workspace-only files."
+            )
+
+        # Save manifest after all files processed
+        manifest.save()
 
         return result
+
+    def _overlay_directory(
+        self,
+        src_dir: Path,
+        dest_dir: Path,
+        result: dict,
+        manifest: Optional[SyncManifest] = None
+    ) -> None:
+        """Copy directory contents recursively to destination.
+
+        Args:
+            src_dir: Source directory to copy from
+            dest_dir: Destination directory to copy to
+            result: Result dict to update in-place (files, dirs_created, skipped)
+            manifest: Optional SyncManifest for change detection
+
+        Returns:
+            None (modifies result dict in-place)
+        """
+        files_deployed: list[str] = []
+        dirs_created: list[str] = []
+
+        # Ensure base dest exists
+        dest_dir.mkdir(parents=True, exist_ok=True)
+
+        for src_file in src_dir.rglob("*"):
+            if src_file.is_file():
+                # Check if file changed (if manifest provided)
+                if manifest:
+                    current_hash = manifest.compute_file_hash(src_file)
+                    if not manifest.file_changed(src_file, current_hash):
+                        result.get("skipped", []).append(str(src_file.name))
+                        continue
+
+                # Calculate relative path and destination
+                rel_path = src_file.relative_to(src_dir)
+                dest_file = dest_dir / rel_path
+
+                # Track directories we create
+                for parent in reversed(dest_file.parents):
+                    if parent == dest_dir:
+                        continue
+                    if not parent.exists():
+                        parent_str = str(parent)
+                        if parent_str not in dirs_created:
+                            dirs_created.append(parent_str)
+
+                # Create parent directories
+                dest_file.parent.mkdir(parents=True, exist_ok=True)
+
+                # Backup existing file
+                if dest_file.exists():
+                    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                    backup = dest_file.with_suffix(
+                        f"{dest_file.suffix}.backup.{timestamp}"
+                    )
+                    shutil.copy2(dest_file, backup)
+
+                # Copy file
+                shutil.copy2(src_file, dest_file)
+
+                # Update manifest after successful copy
+                if manifest:
+                    manifest.update_file(src_file, current_hash=current_hash, sync_direction="to_db")
+
+                # Record relative path from MyBB root
+                try:
+                    files_deployed.append(str(dest_file.relative_to(self.mybb_root)))
+                except ValueError:
+                    # If not relative to mybb_root, use absolute path
+                    files_deployed.append(str(dest_file))
+
+        # Update result dict in-place
+        result["files"].extend(files_deployed)
+        result["dirs_created"].extend(dirs_created)
+
+    def _overlay_file(
+        self,
+        src_file: Path,
+        dest_dir: Path,
+        result: dict,
+        manifest: Optional[SyncManifest] = None
+    ) -> None:
+        """Copy a single file to destination.
+
+        Args:
+            src_file: Source file to copy
+            dest_dir: Destination directory to copy to
+            result: Result dict to update in-place (files, skipped)
+            manifest: Optional SyncManifest for change detection
+
+        Returns:
+            None (modifies result dict in-place)
+        """
+        # Check if file changed (if manifest provided)
+        if manifest:
+            current_hash = manifest.compute_file_hash(src_file)
+            if not manifest.file_changed(src_file, current_hash):
+                result.get("skipped", []).append(str(src_file.name))
+                return
+
+        files_deployed: list[str] = []
+
+        dest_file = dest_dir / src_file.name
+
+        # Backup existing file
+        if dest_file.exists():
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            backup = dest_file.with_suffix(
+                f"{dest_file.suffix}.backup.{timestamp}"
+            )
+            shutil.copy2(dest_file, backup)
+
+        # Copy file
+        shutil.copy2(src_file, dest_file)
+
+        # Update manifest after successful copy
+        if manifest:
+            manifest.update_file(src_file, current_hash=current_hash, sync_direction="to_db")
+
+        # Record relative path from MyBB root
+        try:
+            files_deployed.append(str(dest_file.relative_to(self.mybb_root)))
+        except ValueError:
+            files_deployed.append(str(dest_file))
+
+        # Update result dict in-place
+        result["files"].extend(files_deployed)
 
     def _sync_plugin_templates_to_db(
         self,
         codename: str,
         workspace_path: Path
     ) -> dict[str, Any]:
-        """Sync plugin templates from workspace to database.
+        """Sync plugin templates from workspace to database via bridge.
 
         Plugin templates use {codename}_{template_name} naming convention
         and are stored in master templates (sid=-2).
+
+        Uses bridge template:batch_write for efficient bulk upsert.
 
         Args:
             codename: Plugin codename
@@ -325,6 +514,8 @@ class DiskSyncService:
         if not templates_dir.exists():
             return result
 
+        # Collect all templates for batch write
+        templates_batch = []
         for template_file in templates_dir.glob("*.html"):
             content = template_file.read_text(encoding='utf-8')
             if not content.strip():
@@ -333,18 +524,40 @@ class DiskSyncService:
 
             # Plugin templates use {codename}_{name} convention
             full_template_name = f"{codename}_{template_file.stem}"
+            templates_batch.append({
+                "title": full_template_name,
+                "template": content
+            })
 
-            # Write to master templates (sid=-2)
-            try:
-                # Check if template exists in master
-                existing = self.db.get_template(full_template_name, sid=-2)
-                if existing:
-                    self.db.update_template(existing['tid'], content)
-                else:
-                    self.db.create_template(full_template_name, content, sid=-2)
-                result["templates"].append(full_template_name)
-            except Exception as e:
-                result["warnings"].append(f"Template sync failed: {full_template_name} - {e}")
+        if not templates_batch:
+            return result
+
+        # Use bridge for template writes (CLAUDE.md compliance)
+        if not self.mybb_root:
+            result["warnings"].append("mybb_root not configured - cannot use bridge for templates")
+            return result
+
+        try:
+            import json
+            bridge = MyBBBridgeClient(self.mybb_root)
+
+            # Use batch_write for efficiency - writes to master templates (sid=-2)
+            bridge_result = bridge.call(
+                "template:batch_write",
+                templates_json=json.dumps(templates_batch),
+                sid=-2  # Master templates
+            )
+
+            if bridge_result.success:
+                # All templates in batch were written
+                for t in templates_batch:
+                    result["templates"].append(t["title"])
+            else:
+                result["warnings"].append(
+                    f"Bridge template:batch_write failed: {bridge_result.error}"
+                )
+        except Exception as e:
+            result["warnings"].append(f"Template sync via bridge failed: {e}")
 
         return result
 
@@ -353,7 +566,9 @@ class DiskSyncService:
         codename: str,
         workspace_path: Path
     ) -> dict[str, Any]:
-        """Export plugin templates from database to workspace.
+        """Export plugin templates from database to workspace via bridge.
+
+        Uses bridge template:list endpoint to query templates with codename prefix.
 
         Args:
             codename: Plugin codename
@@ -367,21 +582,39 @@ class DiskSyncService:
         templates_dir = workspace_path / "templates"
         templates_dir.mkdir(parents=True, exist_ok=True)
 
-        # Search for templates with codename prefix in master templates
+        # Use bridge for template reads (CLAUDE.md compliance)
+        if not self.mybb_root:
+            result["warnings"].append("mybb_root not configured - cannot use bridge for templates")
+            return result
+
         try:
-            templates = self.db.search_templates(f"{codename}_", sid=-2)
-            for template in templates:
-                title = template['title']
-                content = template['template']
+            bridge = MyBBBridgeClient(self.mybb_root)
 
-                # Remove codename prefix for local file name
-                local_name = title[len(codename) + 1:]  # Remove "{codename}_"
-                file_path = templates_dir / f"{local_name}.html"
+            # Use template:list with sid and title prefix filter
+            bridge_result = bridge.call(
+                "template:list",
+                sid=-2,  # Master templates
+                title=f"{codename}_"  # Plugin template prefix
+            )
 
-                file_path.write_text(content, encoding='utf-8')
-                result["templates"].append(title)
+            if bridge_result.success:
+                templates = bridge_result.data.get('templates', [])
+                for template in templates:
+                    title = template['title']
+                    content = template['template']
+
+                    # Remove codename prefix for local file name
+                    local_name = title[len(codename) + 1:]  # Remove "{codename}_"
+                    file_path = templates_dir / f"{local_name}.html"
+
+                    file_path.write_text(content, encoding='utf-8')
+                    result["templates"].append(title)
+            else:
+                result["warnings"].append(
+                    f"Bridge template:list failed: {bridge_result.error}"
+                )
         except Exception as e:
-            result["warnings"].append(f"Template export failed: {e}")
+            result["warnings"].append(f"Template export via bridge failed: {e}")
 
         return result
 
@@ -420,7 +653,9 @@ class DiskSyncService:
             "theme": codename,
             "direction": direction,
             "stylesheets_synced": [],
+            "stylesheets_skipped": [],
             "templates_synced": [],
+            "templates_skipped": [],
             "warnings": []
         }
 
@@ -431,6 +666,7 @@ class DiskSyncService:
                     workspace_path, theme_tid
                 )
                 result["stylesheets_synced"] = stylesheet_result.get("stylesheets", [])
+                result["stylesheets_skipped"] = stylesheet_result.get("skipped", [])
                 if stylesheet_result.get("warnings"):
                     result["warnings"].extend(stylesheet_result["warnings"])
 
@@ -439,6 +675,7 @@ class DiskSyncService:
                     workspace_path, template_set_sid
                 )
                 result["templates_synced"] = templates_result.get("templates", [])
+                result["templates_skipped"] = templates_result.get("skipped", [])
                 if templates_result.get("warnings"):
                     result["warnings"].extend(templates_result["warnings"])
 
@@ -448,6 +685,7 @@ class DiskSyncService:
                     workspace_path, theme_tid
                 )
                 result["stylesheets_synced"] = stylesheet_result.get("stylesheets", [])
+                result["stylesheets_skipped"] = stylesheet_result.get("skipped", [])
                 if stylesheet_result.get("warnings"):
                     result["warnings"].extend(stylesheet_result["warnings"])
 
@@ -456,6 +694,7 @@ class DiskSyncService:
                     workspace_path, template_set_sid
                 )
                 result["templates_synced"] = templates_result.get("templates", [])
+                result["templates_skipped"] = templates_result.get("skipped", [])
                 if templates_result.get("warnings"):
                     result["warnings"].extend(templates_result["warnings"])
 
@@ -470,7 +709,9 @@ class DiskSyncService:
         workspace_path: Path,
         theme_tid: int
     ) -> dict[str, Any]:
-        """Sync theme stylesheets from workspace to database.
+        """Sync theme stylesheets from workspace to database via bridge.
+
+        Uses bridge stylesheet:create which handles upsert logic internally.
 
         Args:
             workspace_path: Path to theme workspace
@@ -481,27 +722,60 @@ class DiskSyncService:
         """
         result = {"stylesheets": [], "warnings": []}
 
+        # Initialize manifest for change detection
+        manifest = SyncManifest(workspace_path / ".sync_manifest.json")
+        result["skipped"] = []
+
         stylesheets_dir = workspace_path / "stylesheets"
         if not stylesheets_dir.exists():
             return result
 
+        # Use bridge for stylesheet writes (CLAUDE.md compliance)
+        if not self.mybb_root:
+            result["warnings"].append("mybb_root not configured - cannot use bridge for stylesheets")
+            return result
+
+        bridge = MyBBBridgeClient(self.mybb_root)
+
         for css_file in stylesheets_dir.glob("*.css"):
+            # Check if file changed before reading content
+            current_hash = manifest.compute_file_hash(css_file)
+            if not manifest.file_changed(css_file, current_hash):
+                result["skipped"].append(css_file.name)
+                continue
+
             content = css_file.read_text(encoding='utf-8')
             if not content.strip():
                 result["warnings"].append(f"Skipping empty stylesheet: {css_file.name}")
                 continue
 
             try:
-                # Check if stylesheet exists for this theme
-                existing = self.db.get_stylesheet_by_name(theme_tid, css_file.name)
-                if existing:
-                    self.db.update_stylesheet(existing['sid'], content)
-                else:
-                    self.db.create_stylesheet(theme_tid, css_file.name, content)
-                result["stylesheets"].append(css_file.name)
-            except Exception as e:
-                result["warnings"].append(f"Stylesheet sync failed: {css_file.name} - {e}")
+                # Bridge stylesheet:create handles upsert (create or update)
+                bridge_result = bridge.call(
+                    "stylesheet:create",
+                    tid=theme_tid,
+                    name=css_file.name,
+                    content=content
+                )
 
+                if bridge_result.success:
+                    result["stylesheets"].append(css_file.name)
+                    # Update manifest with synced file
+                    manifest.update_file(
+                        css_file,
+                        current_hash=current_hash,
+                        sync_direction="to_db",
+                        db_entity_type="stylesheet",
+                        db_sid=theme_tid
+                    )
+                else:
+                    result["warnings"].append(
+                        f"Bridge stylesheet:create failed for {css_file.name}: {bridge_result.error}"
+                    )
+            except Exception as e:
+                result["warnings"].append(f"Stylesheet sync via bridge failed: {css_file.name} - {e}")
+
+        manifest.save()
         return result
 
     def _sync_theme_stylesheets_from_db(
@@ -509,7 +783,9 @@ class DiskSyncService:
         workspace_path: Path,
         theme_tid: int
     ) -> dict[str, Any]:
-        """Export theme stylesheets from database to workspace.
+        """Export theme stylesheets from database to workspace via bridge.
+
+        Uses bridge stylesheet:list endpoint to query stylesheets for theme.
 
         Args:
             workspace_path: Path to theme workspace
@@ -520,21 +796,63 @@ class DiskSyncService:
         """
         result = {"stylesheets": [], "warnings": []}
 
+        # Initialize manifest for change detection
+        manifest = SyncManifest(workspace_path / ".sync_manifest.json")
+        result["skipped"] = []
+
         stylesheets_dir = workspace_path / "stylesheets"
         stylesheets_dir.mkdir(parents=True, exist_ok=True)
 
+        # Use bridge for stylesheet reads (CLAUDE.md compliance)
+        if not self.mybb_root:
+            result["warnings"].append("mybb_root not configured - cannot use bridge for stylesheets")
+            return result
+
         try:
-            stylesheets = self.db.list_stylesheets(theme_tid)
-            for stylesheet in stylesheets:
-                name = stylesheet['name']
-                content = stylesheet['stylesheet']
+            bridge = MyBBBridgeClient(self.mybb_root)
 
-                file_path = stylesheets_dir / name
-                file_path.write_text(content, encoding='utf-8')
-                result["stylesheets"].append(name)
+            # Use stylesheet:list with tid filter
+            bridge_result = bridge.call(
+                "stylesheet:list",
+                tid=theme_tid
+            )
+
+            if bridge_result.success:
+                stylesheets = bridge_result.data.get('stylesheets', [])
+                for stylesheet in stylesheets:
+                    name = stylesheet['name']
+                    content = stylesheet['stylesheet']
+                    db_dateline = stylesheet.get('lastmodified', 0)  # MyBB uses 'lastmodified' for stylesheets
+
+                    file_path = stylesheets_dir / name
+
+                    # Check if DB has newer data (only if file already exists)
+                    if file_path.exists() and not manifest.db_changed(file_path, db_dateline):
+                        result["skipped"].append(name)
+                        continue
+
+                    # Write file
+                    file_path.write_text(content, encoding='utf-8')
+                    result["stylesheets"].append(name)
+
+                    # Update manifest with from_db sync info
+                    current_hash = manifest.compute_string_hash(content)
+                    manifest.update_file(
+                        file_path,
+                        current_hash=current_hash,
+                        sync_direction="from_db",
+                        db_entity_type="stylesheet",
+                        db_sid=theme_tid,
+                        db_dateline=db_dateline
+                    )
+            else:
+                result["warnings"].append(
+                    f"Bridge stylesheet:list failed: {bridge_result.error}"
+                )
         except Exception as e:
-            result["warnings"].append(f"Stylesheet export failed: {e}")
+            result["warnings"].append(f"Stylesheet export via bridge failed: {e}")
 
+        manifest.save()
         return result
 
     def _sync_theme_templates_to_db(
@@ -542,9 +860,10 @@ class DiskSyncService:
         workspace_path: Path,
         template_set_sid: int
     ) -> dict[str, Any]:
-        """Sync theme template overrides from workspace to database.
+        """Sync theme template overrides from workspace to database via bridge.
 
         Template overrides are stored in the theme's template set (not master).
+        Uses bridge template:batch_write for efficient bulk upsert.
 
         Args:
             workspace_path: Path to theme workspace
@@ -555,29 +874,77 @@ class DiskSyncService:
         """
         result = {"templates": [], "warnings": []}
 
+        # Initialize manifest for change detection
+        manifest = SyncManifest(workspace_path / ".sync_manifest.json")
+        result["skipped"] = []
+
         templates_dir = workspace_path / "templates"
         if not templates_dir.exists():
             return result
 
-        for template_file in templates_dir.glob("*.html"):
+        # Collect all templates for batch write
+        templates_batch = []
+        for template_file in templates_dir.glob("**/*.html"):  # Recursive glob
+            # Check if file changed before reading content
+            current_hash = manifest.compute_file_hash(template_file)
+            if not manifest.file_changed(template_file, current_hash):
+                result["skipped"].append(template_file.stem)
+                continue
+
             content = template_file.read_text(encoding='utf-8')
             if not content.strip():
                 result["warnings"].append(f"Skipping empty template: {template_file.name}")
                 continue
 
             template_name = template_file.stem
+            templates_batch.append({
+                "title": template_name,
+                "template": content,
+                "_hash": current_hash,  # Store for manifest update
+                "_path": template_file   # Store for manifest update
+            })
 
-            try:
-                # Check if template exists in this template set
-                existing = self.db.get_template(template_name, sid=template_set_sid)
-                if existing:
-                    self.db.update_template(existing['tid'], content)
-                else:
-                    # Create as override in this template set
-                    self.db.create_template(template_name, content, sid=template_set_sid)
-                result["templates"].append(template_name)
-            except Exception as e:
-                result["warnings"].append(f"Template sync failed: {template_name} - {e}")
+        if not templates_batch:
+            return result
+
+        # Use bridge for template writes (CLAUDE.md compliance)
+        if not self.mybb_root:
+            result["warnings"].append("mybb_root not configured - cannot use bridge for templates")
+            return result
+
+        try:
+            import json
+            bridge = MyBBBridgeClient(self.mybb_root)
+
+            # Clean batch for bridge (remove internal keys)
+            clean_batch = [{"title": t["title"], "template": t["template"]} for t in templates_batch]
+
+            # Use batch_write for efficiency - writes to the specified template set
+            bridge_result = bridge.call(
+                "template:batch_write",
+                templates_json=json.dumps(clean_batch),
+                sid=template_set_sid  # Theme's template set (not master)
+            )
+
+            if bridge_result.success:
+                # All templates in batch were written
+                for t in templates_batch:
+                    result["templates"].append(t["title"])
+                    # Update manifest with synced file
+                    manifest.update_file(
+                        t["_path"],
+                        current_hash=t["_hash"],
+                        sync_direction="to_db",
+                        db_entity_type="template",
+                        db_sid=template_set_sid
+                    )
+                manifest.save()
+            else:
+                result["warnings"].append(
+                    f"Bridge template:batch_write failed: {bridge_result.error}"
+                )
+        except Exception as e:
+            result["warnings"].append(f"Template sync via bridge failed: {e}")
 
         return result
 
@@ -586,7 +953,9 @@ class DiskSyncService:
         workspace_path: Path,
         template_set_sid: int
     ) -> dict[str, Any]:
-        """Export theme template overrides from database to workspace.
+        """Export theme template overrides from database to workspace via bridge.
+
+        Uses bridge template:list endpoint to query templates for the template set.
 
         Args:
             workspace_path: Path to theme workspace
@@ -597,20 +966,71 @@ class DiskSyncService:
         """
         result = {"templates": [], "warnings": []}
 
+        # Initialize manifest for change detection
+        manifest = SyncManifest(workspace_path / ".sync_manifest.json")
+        result["skipped"] = []
+
+        # Initialize group manager for categorization
+        group_manager = TemplateGroupManager(self.db)
+
         templates_dir = workspace_path / "templates"
         templates_dir.mkdir(parents=True, exist_ok=True)
 
-        try:
-            # Get templates from this specific template set (not master)
-            templates = self.db.list_templates_by_set(template_set_sid)
-            for template in templates:
-                title = template['title']
-                content = template['template']
+        # Use bridge for template reads (CLAUDE.md compliance)
+        if not self.mybb_root:
+            result["warnings"].append("mybb_root not configured - cannot use bridge for templates")
+            return result
 
-                file_path = templates_dir / f"{title}.html"
-                file_path.write_text(content, encoding='utf-8')
-                result["templates"].append(title)
+        try:
+            bridge = MyBBBridgeClient(self.mybb_root)
+
+            # Use template:list with sid filter (no title prefix for theme templates)
+            bridge_result = bridge.call(
+                "template:list",
+                sid=template_set_sid
+            )
+
+            if bridge_result.success:
+                templates = bridge_result.data.get('templates', [])
+                for template in templates:
+                    title = template['title']
+                    content = template['template']
+                    db_dateline = template.get('dateline', 0)
+
+                    # Build grouped path directly from workspace_path
+                    group_name = group_manager.get_group_name(title, sid=template_set_sid)
+                    file_path = workspace_path / "templates" / group_name / f"{title}.html"
+
+                    # Check if DB has newer data (only if file already exists)
+                    if file_path.exists() and not manifest.db_changed(file_path, db_dateline):
+                        result["skipped"].append(title)
+                        continue
+
+                    # Create group directory if needed
+                    file_path.parent.mkdir(parents=True, exist_ok=True)
+
+                    # Write file
+                    file_path.write_text(content, encoding='utf-8')
+                    result["templates"].append(title)
+
+                    # Update manifest with from_db sync info
+                    current_hash = manifest.compute_string_hash(content)
+                    manifest.update_file(
+                        file_path,
+                        current_hash=current_hash,
+                        sync_direction="from_db",
+                        db_entity_type="template",
+                        db_sid=template_set_sid,
+                        db_dateline=db_dateline
+                    )
+
+                # Save manifest after processing all templates
+                manifest.save()
+            else:
+                result["warnings"].append(
+                    f"Bridge template:list failed: {bridge_result.error}"
+                )
         except Exception as e:
-            result["warnings"].append(f"Template export failed: {e}")
+            result["warnings"].append(f"Template export via bridge failed: {e}")
 
         return result
