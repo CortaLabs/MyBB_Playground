@@ -214,6 +214,156 @@ THEME_TOOLS = [
             "required": ["codename"],
         },
     ),
+    Tool(
+        name="mybb_theme_install",
+        description="Deploy theme from workspace to TestForum. Creates theme record, imports stylesheets, and sets as default.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "codename": {"type": "string", "description": "Theme codename"},
+                "visibility": {"type": "string", "enum": ["public", "private"], "description": "Workspace visibility"},
+                "set_default": {"type": "boolean", "description": "Set as default theme after install (ALWAYS use True)", "default": True}
+            },
+            "required": ["codename"]
+        }
+    ),
+    Tool(
+        name="mybb_theme_uninstall",
+        description="Remove theme from TestForum. Reverts customizations but does not delete theme record by default.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "codename": {"type": "string", "description": "Theme codename"},
+                "remove_from_db": {"type": "boolean", "description": "Also delete theme record from database"}
+            },
+            "required": ["codename"]
+        }
+    ),
+    Tool(
+        name="mybb_theme_status",
+        description="Get comprehensive theme status including workspace, installation, and MyBB database state.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "codename": {"type": "string", "description": "Theme codename"}
+            },
+            "required": ["codename"]
+        }
+    ),
+    Tool(
+        name="mybb_theme_export_xml",
+        description="Export theme from workspace to MyBB-compatible XML format. Generates XML matching MyBB's theme import format with properties, stylesheets, and optional templates.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "codename": {"type": "string", "description": "Theme codename"},
+                "output_path": {"type": "string", "description": "Optional file path to write XML. If omitted, XML is returned in response."},
+                "visibility": {"type": "string", "enum": ["public", "private"], "description": "Workspace visibility (public/private)"}
+            },
+            "required": ["codename"]
+        }
+    ),
+    Tool(
+        name="mybb_theme_import_xml",
+        description="Import theme from MyBB XML file to workspace. Parses XML and extracts stylesheets to stylesheets/, templates to templates/, and generates meta.json.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "xml_path": {"type": "string", "description": "Path to the MyBB theme XML file to import"},
+                "codename": {"type": "string", "description": "Optional codename override (defaults to sanitized theme name from XML)"},
+                "visibility": {"type": "string", "enum": ["public", "private"], "default": "public", "description": "Workspace visibility (public/private)"}
+            },
+            "required": ["xml_path"]
+        }
+    ),
+    Tool(
+        name="mybb_theme_import_to_mybb",
+        description="Import theme XML directly to MyBB database via bridge. Creates theme record without workspace. Use for importing third-party themes.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "xml_path": {"type": "string", "description": "Path to XML file or raw XML content"},
+                "name": {"type": "string", "description": "Optional theme name override"},
+                "parent": {"type": "integer", "description": "Parent theme ID (default: 1)"},
+                "no_stylesheets": {"type": "boolean", "description": "Skip stylesheet import"},
+                "no_templates": {"type": "boolean", "description": "Skip template import"},
+                "force_version": {"type": "boolean", "description": "Bypass version compatibility check"}
+            },
+            "required": ["xml_path"]
+        }
+    ),
+    Tool(
+        name="mybb_templateset_create",
+        description="Create a new templateset for themes.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "title": {"type": "string", "description": "Templateset title (e.g., 'My Theme Templates')"},
+            },
+            "required": ["title"],
+        },
+    ),
+    Tool(
+        name="mybb_templateset_copy_master",
+        description="Copy all master templates to a templateset (972 templates).",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "sid": {"type": "integer", "description": "Target templateset SID"},
+                "source_sid": {"type": "integer", "description": "Source templateset SID (default: -2 for master)"},
+            },
+            "required": ["sid"],
+        },
+    ),
+    Tool(
+        name="mybb_theme_create_db",
+        description="Create a theme directly in MyBB database (not workspace). For workspace themes use mybb_create_theme.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "description": "Theme display name"},
+                "pid": {"type": "integer", "description": "Parent theme ID (default: 1 for Master Style)"},
+                "templateset": {"type": "integer", "description": "Templateset SID to use"},
+            },
+            "required": ["name"],
+        },
+    ),
+    Tool(
+        name="mybb_theme_get",
+        description="Get theme information by tid or name.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "tid": {"type": "integer", "description": "Theme ID"},
+                "name": {"type": "string", "description": "Theme name"},
+            },
+        },
+    ),
+    Tool(
+        name="mybb_stylesheet_create",
+        description="Create or update a stylesheet for a theme.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "tid": {"type": "integer", "description": "Theme ID"},
+                "name": {"type": "string", "description": "Stylesheet filename (e.g., 'global.css')"},
+                "content": {"type": "string", "description": "CSS content"},
+                "attachedto": {"type": "string", "description": "Pages to attach to (optional)"},
+            },
+            "required": ["tid", "name", "content"],
+        },
+    ),
+    Tool(
+        name="mybb_theme_set_default",
+        description="Set a theme as the default theme for the forum.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "tid": {"type": "integer", "description": "Theme ID to set as default"},
+            },
+            "required": ["tid"],
+        },
+    ),
 ]
 
 
@@ -787,6 +937,28 @@ SYNC_TOOLS = [
             "required": [],
         },
     ),
+    Tool(
+        name="mybb_workspace_sync",
+        description="Sync workspace files (plugins or themes) to TestForum without full reinstall. "
+                    "Supports incremental sync (default) or full pipeline mode for DB changes.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "codename": {"type": "string", "description": "Plugin or theme codename"},
+                "type": {"type": "string", "enum": ["plugin", "theme"], "description": "Type of workspace to sync"},
+                "visibility": {"type": "string", "enum": ["public", "private"], "description": "Workspace visibility (plugins only)"},
+                "direction": {
+                    "type": "string",
+                    "enum": ["to_db", "from_db"],
+                    "default": "to_db",
+                    "description": "Sync direction: to_db (workspace->DB) or from_db (DB->workspace export)"
+                },
+                "full_pipeline": {"type": "boolean", "description": "Run complete uninstall/install cycle", "default": False},
+                "dry_run": {"type": "boolean", "description": "Preview what would sync", "default": False}
+            },
+            "required": ["codename", "type"],
+        },
+    ),
 ]
 
 
@@ -895,24 +1067,24 @@ ORCHESTRATION_TOOLS = [
 
 PLUGIN_GIT_TOOLS = [
     Tool(
-        name="mybb_plugin_git_list",
-        description="List all plugins and themes that have git initialized.",
+        name="mybb_workspace_git_list",
+        description="List all plugin and theme workspaces that have git initialized.",
         inputSchema={
             "type": "object",
             "properties": {
-                "type": {"type": "string", "description": "Filter: 'plugins', 'themes', or 'all'", "enum": ["plugins", "themes", "all"]},
+                "type": {"type": "string", "description": "Filter by workspace type: 'plugins', 'themes', or 'all'", "enum": ["plugins", "themes", "all"]},
             },
             "required": [],
         },
     ),
     Tool(
-        name="mybb_plugin_git_init",
-        description="Initialize git in a plugin or theme directory. Creates a nested repo (not a subtree).",
+        name="mybb_workspace_git_init",
+        description="Initialize git in a plugin or theme workspace directory. Creates a nested repo (not a subtree).",
         inputSchema={
             "type": "object",
             "properties": {
                 "codename": {"type": "string", "description": "Plugin or theme codename"},
-                "type": {"type": "string", "description": "'plugin' or 'theme'", "enum": ["plugin", "theme"]},
+                "type": {"type": "string", "description": "Workspace type: 'plugin' or 'theme'", "enum": ["plugin", "theme"]},
                 "visibility": {"type": "string", "description": "'public' or 'private'", "enum": ["public", "private"]},
                 "remote": {"type": "string", "description": "Remote URL to add as origin"},
                 "branch": {"type": "string", "description": "Initial branch name", "default": "main"},
@@ -921,13 +1093,13 @@ PLUGIN_GIT_TOOLS = [
         },
     ),
     Tool(
-        name="mybb_plugin_github_create",
-        description="Create a GitHub repo and link it to a plugin/theme. Requires GitHub CLI (gh) authenticated.",
+        name="mybb_workspace_github_create",
+        description="Create a GitHub repo and link it to a plugin or theme workspace. Requires GitHub CLI (gh) authenticated.",
         inputSchema={
             "type": "object",
             "properties": {
                 "codename": {"type": "string", "description": "Plugin or theme codename"},
-                "type": {"type": "string", "description": "'plugin' or 'theme'", "enum": ["plugin", "theme"]},
+                "type": {"type": "string", "description": "Workspace type: 'plugin' or 'theme'", "enum": ["plugin", "theme"]},
                 "visibility": {"type": "string", "description": "'public' or 'private'", "enum": ["public", "private"]},
                 "repo_visibility": {"type": "string", "description": "GitHub repo: 'public' or 'private'", "enum": ["public", "private"]},
                 "repo_name": {"type": "string", "description": "GitHub repo name (default: codename)"},
@@ -937,41 +1109,41 @@ PLUGIN_GIT_TOOLS = [
         },
     ),
     Tool(
-        name="mybb_plugin_git_status",
-        description="Get git status for a plugin or theme.",
+        name="mybb_workspace_git_status",
+        description="Get git status for a plugin or theme workspace.",
         inputSchema={
             "type": "object",
             "properties": {
                 "codename": {"type": "string", "description": "Plugin or theme codename"},
-                "type": {"type": "string", "description": "'plugin' or 'theme'", "enum": ["plugin", "theme"]},
+                "type": {"type": "string", "description": "Workspace type: 'plugin' or 'theme'", "enum": ["plugin", "theme"]},
                 "visibility": {"type": "string", "description": "'public' or 'private'", "enum": ["public", "private"]},
             },
             "required": ["codename"],
         },
     ),
     Tool(
-        name="mybb_plugin_git_commit",
-        description="Commit changes in a plugin or theme repository. By default stages all changes. Use 'files' param to commit only specific files (useful for agent swarms).",
+        name="mybb_workspace_git_commit",
+        description="Commit changes in a plugin or theme workspace repository. By default stages all changes. Use 'files' param to commit only specific files (useful for agent swarms).",
         inputSchema={
             "type": "object",
             "properties": {
                 "codename": {"type": "string", "description": "Plugin or theme codename"},
                 "message": {"type": "string", "description": "Commit message"},
-                "type": {"type": "string", "description": "'plugin' or 'theme'", "enum": ["plugin", "theme"]},
+                "type": {"type": "string", "description": "Workspace type: 'plugin' or 'theme'", "enum": ["plugin", "theme"]},
                 "visibility": {"type": "string", "description": "'public' or 'private'", "enum": ["public", "private"]},
-                "files": {"type": "array", "items": {"type": "string"}, "description": "Specific files to commit (relative to plugin root). If omitted, commits all changes."},
+                "files": {"type": "array", "items": {"type": "string"}, "description": "Specific files to commit (relative to workspace root). If omitted, commits all changes."},
             },
             "required": ["codename", "message"],
         },
     ),
     Tool(
-        name="mybb_plugin_git_push",
-        description="Push commits to remote repository.",
+        name="mybb_workspace_git_push",
+        description="Push commits to remote repository for a plugin or theme workspace.",
         inputSchema={
             "type": "object",
             "properties": {
                 "codename": {"type": "string", "description": "Plugin or theme codename"},
-                "type": {"type": "string", "description": "'plugin' or 'theme'", "enum": ["plugin", "theme"]},
+                "type": {"type": "string", "description": "Workspace type: 'plugin' or 'theme'", "enum": ["plugin", "theme"]},
                 "visibility": {"type": "string", "description": "'public' or 'private'", "enum": ["public", "private"]},
                 "set_upstream": {"type": "boolean", "description": "Set upstream tracking branch", "default": False},
             },
@@ -979,13 +1151,13 @@ PLUGIN_GIT_TOOLS = [
         },
     ),
     Tool(
-        name="mybb_plugin_git_pull",
-        description="Pull changes from remote repository.",
+        name="mybb_workspace_git_pull",
+        description="Pull changes from remote repository for a plugin or theme workspace.",
         inputSchema={
             "type": "object",
             "properties": {
                 "codename": {"type": "string", "description": "Plugin or theme codename"},
-                "type": {"type": "string", "description": "'plugin' or 'theme'", "enum": ["plugin", "theme"]},
+                "type": {"type": "string", "description": "Workspace type: 'plugin' or 'theme'", "enum": ["plugin", "theme"]},
                 "visibility": {"type": "string", "description": "'public' or 'private'", "enum": ["public", "private"]},
             },
             "required": ["codename"],
@@ -1476,5 +1648,5 @@ ALL_TOOLS = (
 )
 
 # Tool count verification
-EXPECTED_TOOL_COUNT = 106  # Was 105, added mybb_plugin_import
+EXPECTED_TOOL_COUNT = 119  # Was 118, added mybb_workspace_sync in workspace-sync-tool
 assert len(ALL_TOOLS) == EXPECTED_TOOL_COUNT, f"Expected {EXPECTED_TOOL_COUNT} tools, got {len(ALL_TOOLS)}"

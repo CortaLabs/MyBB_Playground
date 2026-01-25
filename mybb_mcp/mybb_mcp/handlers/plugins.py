@@ -1268,73 +1268,6 @@ async def handle_delete_plugin(
         return f"Error deleting plugin: {e}"
 
 
-async def handle_delete_theme(
-    args: dict, db: Any, config: Any, sync_service: Any
-) -> str:
-    """Permanently delete a theme from workspace and database.
-
-    Args:
-        args: Contains codename, archive (default True), force (default False)
-        db: MyBBDatabase instance (unused)
-        config: Server configuration
-        sync_service: Disk sync service (unused)
-
-    Returns:
-        Markdown formatted deletion result
-    """
-    repo_root = Path(__file__).resolve().parent.parent.parent.parent
-    if str(repo_root) not in sys.path:
-        sys.path.insert(0, str(repo_root))
-
-    try:
-        from plugin_manager.manager import PluginManager
-
-        manager = PluginManager()
-
-        codename = args.get("codename", "")
-        archive = args.get("archive", True)
-        force = args.get("force", False)
-
-        if not codename:
-            return "# Error\n\n**Error:** codename is required"
-
-        result = manager.delete_theme(codename, archive=archive, force=force)
-
-        if result.get("success"):
-            lines = [
-                f"# Theme Deleted: {codename}",
-                "",
-                "## Actions Taken"
-            ]
-            for action in result.get("actions", []):
-                lines.append(f"- {action}")
-
-            if result.get("archive_path"):
-                lines.append(f"\n**Archived to:** `{result['archive_path']}`")
-
-            if result.get("warnings"):
-                lines.append("\n## Warnings")
-                for warning in result["warnings"]:
-                    lines.append(f"- ⚠️ {warning}")
-
-            return "\n".join(lines)
-        else:
-            error_msg = result.get("error", "Unknown error")
-            warnings = result.get("warnings", [])
-            lines = [f"# Error Deleting Theme\n\n**Error:** {error_msg}"]
-            if warnings:
-                lines.append("\n## Warnings")
-                for w in warnings:
-                    lines.append(f"- {w}")
-            return "\n".join(lines)
-
-    except ImportError as e:
-        return f"Error: plugin_manager not available: {e}"
-    except Exception as e:
-        logger.exception(f"Error deleting theme {args.get('codename')}")
-        return f"Error deleting theme: {e}"
-
-
 # ==================== Export/Import Handlers ====================
 
 async def handle_plugin_export(
@@ -1796,7 +1729,6 @@ PLUGIN_HANDLERS = {
     "mybb_read_plugin": handle_read_plugin,
     "mybb_create_plugin": handle_create_plugin,
     "mybb_delete_plugin": handle_delete_plugin,
-    "mybb_delete_theme": handle_delete_theme,
     "mybb_list_hooks": handle_list_hooks,
     "mybb_hooks_discover": handle_hooks_discover,
     "mybb_hooks_usage": handle_hooks_usage,
