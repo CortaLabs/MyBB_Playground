@@ -58,7 +58,7 @@ def create_server(config: MyBBConfig) -> Server:
     sync_root = config.mybb_root.parent / "mybb_sync"
     sync_root.mkdir(parents=True, exist_ok=True)
     sync_config = SyncConfig(sync_root=sync_root)
-    sync_service = DiskSyncService(db, sync_config, config.mybb_url)
+    sync_service = DiskSyncService(db, sync_config, config.mybb_url, mybb_root=config.mybb_root)
 
     # Auto-start file watcher (dev server - always want sync on)
     sync_service.start_watcher()

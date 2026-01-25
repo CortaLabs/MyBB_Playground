@@ -50,7 +50,7 @@ def get_git_remote(path: Path) -> Optional[str]:
     return None
 
 
-async def handle_plugin_git_list(args: dict, db: Any, config: Any, sync_service: Any) -> str:
+async def handle_workspace_git_list(args: dict, db: Any, config: Any, sync_service: Any) -> str:
     """List all plugins/themes that have git initialized.
 
     Args:
@@ -102,7 +102,7 @@ async def handle_plugin_git_list(args: dict, db: Any, config: Any, sync_service:
                         })
 
     if not results:
-        return "No plugins or themes have git initialized.\n\nUse `mybb_plugin_git_init` to initialize git for a plugin."
+        return "No plugins or themes have git initialized.\n\nUse `mybb_workspace_git_init` to initialize git for a plugin."
 
     # Format output
     lines = [f"# Git-Enabled {'Plugins' if item_type == 'plugins' else 'Themes' if item_type == 'themes' else 'Plugins & Themes'}\n"]
@@ -117,7 +117,7 @@ async def handle_plugin_git_list(args: dict, db: Any, config: Any, sync_service:
     return "\n".join(lines)
 
 
-async def handle_plugin_git_init(args: dict, db: Any, config: Any, sync_service: Any) -> str:
+async def handle_workspace_git_init(args: dict, db: Any, config: Any, sync_service: Any) -> str:
     """Initialize git in a plugin or theme directory.
 
     Args:
@@ -218,7 +218,7 @@ async def handle_plugin_git_init(args: dict, db: Any, config: Any, sync_service:
         return f"Error: {str(e)}"
 
 
-async def handle_plugin_github_create(args: dict, db: Any, config: Any, sync_service: Any) -> str:
+async def handle_workspace_github_create(args: dict, db: Any, config: Any, sync_service: Any) -> str:
     """Create a GitHub repo and link it to a plugin/theme.
 
     Requires GitHub CLI (gh) to be authenticated.
@@ -328,7 +328,7 @@ async def handle_plugin_github_create(args: dict, db: Any, config: Any, sync_ser
         return f"Error: {str(e)}"
 
 
-async def handle_plugin_git_status(args: dict, db: Any, config: Any, sync_service: Any) -> str:
+async def handle_workspace_git_status(args: dict, db: Any, config: Any, sync_service: Any) -> str:
     """Get git status for a plugin or theme.
 
     Args:
@@ -360,7 +360,7 @@ async def handle_plugin_git_status(args: dict, db: Any, config: Any, sync_servic
         return f"Error: {item_type} '{codename}' not found at `{path}`"
 
     if not has_git(path):
-        return f"Git not initialized for '{codename}'. Use `mybb_plugin_git_init` first."
+        return f"Git not initialized for '{codename}'. Use `mybb_workspace_git_init` first."
 
     try:
         result = run_git(path, "status", "--short", "--branch")
@@ -380,7 +380,7 @@ async def handle_plugin_git_status(args: dict, db: Any, config: Any, sync_servic
         return f"Error: {str(e)}"
 
 
-async def handle_plugin_git_commit(args: dict, db: Any, config: Any, sync_service: Any) -> str:
+async def handle_workspace_git_commit(args: dict, db: Any, config: Any, sync_service: Any) -> str:
     """Commit changes in a plugin or theme repository.
 
     Args:
@@ -421,7 +421,7 @@ async def handle_plugin_git_commit(args: dict, db: Any, config: Any, sync_servic
         return f"Error: {item_type} '{codename}' not found at `{path}`"
 
     if not has_git(path):
-        return f"Git not initialized for '{codename}'. Use `mybb_plugin_git_init` first."
+        return f"Git not initialized for '{codename}'. Use `mybb_workspace_git_init` first."
 
     try:
         # Check if there are changes to commit
@@ -486,7 +486,7 @@ async def handle_plugin_git_commit(args: dict, db: Any, config: Any, sync_servic
             output.append("- **Files:** all changes")
 
         output.append("")
-        output.append("Use `mybb_plugin_git_push` to push to remote.")
+        output.append("Use `mybb_workspace_git_push` to push to remote.")
 
         if warning:
             output.append(warning)
@@ -499,7 +499,7 @@ async def handle_plugin_git_commit(args: dict, db: Any, config: Any, sync_servic
         return f"Error: {str(e)}"
 
 
-async def handle_plugin_git_push(args: dict, db: Any, config: Any, sync_service: Any) -> str:
+async def handle_workspace_git_push(args: dict, db: Any, config: Any, sync_service: Any) -> str:
     """Push commits to remote repository.
 
     Args:
@@ -533,11 +533,11 @@ async def handle_plugin_git_push(args: dict, db: Any, config: Any, sync_service:
         return f"Error: {item_type} '{codename}' not found at `{path}`"
 
     if not has_git(path):
-        return f"Git not initialized for '{codename}'. Use `mybb_plugin_git_init` first."
+        return f"Git not initialized for '{codename}'. Use `mybb_workspace_git_init` first."
 
     remote = get_git_remote(path)
     if not remote:
-        return f"No remote configured for '{codename}'. Use `mybb_plugin_github_create` first."
+        return f"No remote configured for '{codename}'. Use `mybb_workspace_github_create` first."
 
     try:
         # Get current branch
@@ -571,7 +571,7 @@ async def handle_plugin_git_push(args: dict, db: Any, config: Any, sync_service:
         return f"Error: {str(e)}"
 
 
-async def handle_plugin_git_pull(args: dict, db: Any, config: Any, sync_service: Any) -> str:
+async def handle_workspace_git_pull(args: dict, db: Any, config: Any, sync_service: Any) -> str:
     """Pull changes from remote repository.
 
     Args:
@@ -603,7 +603,7 @@ async def handle_plugin_git_pull(args: dict, db: Any, config: Any, sync_service:
         return f"Error: {item_type} '{codename}' not found at `{path}`"
 
     if not has_git(path):
-        return f"Git not initialized for '{codename}'. Use `mybb_plugin_git_init` first."
+        return f"Git not initialized for '{codename}'. Use `mybb_workspace_git_init` first."
 
     remote = get_git_remote(path)
     if not remote:
@@ -634,13 +634,13 @@ async def handle_plugin_git_pull(args: dict, db: Any, config: Any, sync_service:
         return f"Error: {str(e)}"
 
 
-# Handler registry for plugin git tools
-PLUGIN_GIT_HANDLERS = {
-    "mybb_plugin_git_list": handle_plugin_git_list,
-    "mybb_plugin_git_init": handle_plugin_git_init,
-    "mybb_plugin_github_create": handle_plugin_github_create,
-    "mybb_plugin_git_status": handle_plugin_git_status,
-    "mybb_plugin_git_commit": handle_plugin_git_commit,
-    "mybb_plugin_git_push": handle_plugin_git_push,
-    "mybb_plugin_git_pull": handle_plugin_git_pull,
+# Handler registry for workspace git tools
+WORKSPACE_GIT_HANDLERS = {
+    "mybb_workspace_git_list": handle_workspace_git_list,
+    "mybb_workspace_git_init": handle_workspace_git_init,
+    "mybb_workspace_github_create": handle_workspace_github_create,
+    "mybb_workspace_git_status": handle_workspace_git_status,
+    "mybb_workspace_git_commit": handle_workspace_git_commit,
+    "mybb_workspace_git_push": handle_workspace_git_push,
+    "mybb_workspace_git_pull": handle_workspace_git_pull,
 }
