@@ -1135,18 +1135,26 @@ function {codename}_load_templates_from_disk() {{
         result["success"] = True
         return result
 
-    def install_theme(self, codename: str, visibility: Optional[str] = None) -> Dict[str, Any]:
+    def install_theme(
+        self,
+        codename: str,
+        visibility: Optional[str] = None,
+        mybb_db: Optional[Any] = None,
+        set_default: bool = False
+    ) -> Dict[str, Any]:
         """Install theme to TestForum.
 
         Args:
             codename: Theme codename
             visibility: 'public' or 'private' (uses default if None)
+            mybb_db: MyBBDatabase instance (optional, created if None)
+            set_default: Set as default/active theme after install
 
         Returns:
             Dict with installation status and details
         """
-        installer = ThemeInstaller(self.config, self.db, self.theme_workspace)
-        return installer.install_theme(codename, visibility)
+        installer = ThemeInstaller(self.config, self.db, self.theme_workspace, mybb_db=mybb_db)
+        return installer.install_theme(codename, visibility, set_default=set_default)
 
     def uninstall_theme(self, codename: str, visibility: Optional[str] = None) -> Dict[str, Any]:
         """Uninstall theme from TestForum.
@@ -1447,19 +1455,18 @@ function {codename}_load_templates_from_disk() {{
 
         from mybb_mcp.sync.service import DiskSyncService
         from mybb_mcp.sync.config import SyncConfig
+        from mybb_mcp.config import load_config
         from mybb_mcp.db import MyBBDatabase
 
-        # Create MyBB database connection
-        mybb_db = MyBBDatabase({
-            'host': self.config.mybb_db_host,
-            'name': self.config.mybb_db_name,
-            'user': self.config.mybb_db_user,
-            'password': self.config.mybb_db_password,
-            'prefix': self.config.mybb_db_prefix
-        })
+        # Load DB config from .env via mybb_mcp.config
+        mybb_config = load_config()
 
-        # Create sync config
-        sync_config = SyncConfig(sync_root=self.config.sync_root)
+        # Create MyBB database connection using proper config
+        mybb_db = MyBBDatabase(mybb_config.db)
+
+        # Create sync config - use repo_root/mybb_sync as default sync_root
+        sync_root = self.config.repo_root / "mybb_sync"
+        sync_config = SyncConfig(sync_root=sync_root)
 
         # Workspace root is parent of plugins/ and themes/ directories
         workspace_root = self.config.get_workspace_path('plugin').parent
@@ -1467,7 +1474,7 @@ function {codename}_load_templates_from_disk() {{
         return DiskSyncService(
             db=mybb_db,
             config=sync_config,
-            mybb_url=self.config.mybb_url,
+            mybb_url=mybb_config.mybb_url,
             workspace_root=workspace_root,
             mybb_root=self.config.mybb_root
         )
@@ -1852,3 +1859,514 @@ function {codename}_load_templates_from_disk() {{
         """
         packager = ThemePackager(self.theme_workspace, self.db)
         return packager.validate_for_export(codename, visibility)
+
+    def export_theme_xml(
+        self,
+        codename: str,
+        output_path: Optional[str] = None,
+        visibility: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Export theme to MyBB-compatible XML format.
+
+        Generates XML matching the MyBB theme import format with:
+        - Properties section (templateset, editortheme, imgdir, etc.)
+        - Stylesheets section with CDATA-wrapped CSS
+        - Templates section (if present in workspace)
+
+        Args:
+            codename: Theme codename
+            output_path: Optional path to write XML file
+            visibility: Workspace visibility
+
+        Returns:
+            {
+                "success": bool,
+                "xml": str (if no output_path),
+                "path": str (if output_path provided),
+                "stylesheets_count": int,
+                "templates_count": int,
+                "errors": List[str]
+            }
+        """
+        import json
+        from xml.sax.saxutils import escape as xml_escape
+
+        errors = []
+
+        # Get workspace path
+        workspace_path = self.theme_workspace.get_workspace_path(codename, visibility)
+        if not workspace_path:
+            return {
+                "success": False,
+                "errors": [f"Theme workspace not found: {codename}"],
+                "xml": None,
+                "path": None,
+                "stylesheets_count": 0,
+                "templates_count": 0
+            }
+
+        # Load meta.json
+        meta_path = workspace_path / "meta.json"
+        if not meta_path.exists():
+            return {
+                "success": False,
+                "errors": ["meta.json not found in workspace"],
+                "xml": None,
+                "path": None,
+                "stylesheets_count": 0,
+                "templates_count": 0
+            }
+
+        try:
+            with open(meta_path) as f:
+                meta = json.load(f)
+        except json.JSONDecodeError as e:
+            return {
+                "success": False,
+                "errors": [f"Invalid meta.json: {e}"],
+                "xml": None,
+                "path": None,
+                "stylesheets_count": 0,
+                "templates_count": 0
+            }
+
+        # Helper function to escape CDATA content
+        def escape_cdata(content: str) -> str:
+            """Escape ]]> sequences in CDATA content."""
+            return content.replace("]]>", "]]]]><![CDATA[>")
+
+        # Build XML
+        theme_name = meta.get("display_name", codename)
+        # MyBB version number (1826 = 1.8.26, 1839 = 1.8.39)
+        mybb_version = "1839"
+
+        lines = [
+            '<?xml version="1.0" encoding="UTF-8"?>',
+            f'<theme name="{xml_escape(theme_name)}" version="{mybb_version}">'
+        ]
+
+        # Build properties section
+        lines.append('\t<properties>')
+
+        # templateset - use -1 for global or a specific sid
+        lines.append('\t\t<templateset><![CDATA[-1]]></templateset>')
+
+        # editortheme - SCEditor theme
+        lines.append('\t\t<editortheme><![CDATA[default.css]]></editortheme>')
+
+        # imgdir - images directory
+        imgdir = meta.get("files", {}).get("images", f"images/{codename}")
+        lines.append(f'\t\t<imgdir><![CDATA[{escape_cdata(imgdir)}]]></imgdir>')
+
+        # logo path
+        logo = f"images/{codename}/logo.png"
+        lines.append(f'\t\t<logo><![CDATA[{escape_cdata(logo)}]]></logo>')
+
+        # tablespace and borderwidth (MyBB defaults)
+        lines.append('\t\t<tablespace><![CDATA[5]]></tablespace>')
+        lines.append('\t\t<borderwidth><![CDATA[0]]></borderwidth>')
+
+        # color (empty or hex color)
+        color = meta.get("color_scheme", {}).get("primary", "")
+        lines.append(f'\t\t<color><![CDATA[{escape_cdata(color)}]]></color>')
+
+        # disporder - serialized PHP array for stylesheet display order
+        stylesheets_meta = meta.get("stylesheets", [])
+        disporder_items = []
+        for i, ss in enumerate(stylesheets_meta):
+            ss_name = ss.get("name", "") if isinstance(ss, dict) else ss
+            if not ss_name.endswith(".css"):
+                ss_name += ".css"
+            order = ss.get("display_order", i + 1) if isinstance(ss, dict) else i + 1
+            disporder_items.append(f's:{len(ss_name)}:"{ss_name}";i:{order};')
+
+        if disporder_items:
+            items_str = "".join(disporder_items)
+            disporder_serialized = f'a:{len(disporder_items)}:{{{items_str}}}'
+        else:
+            disporder_serialized = 'a:0:{}'
+        lines.append(f'\t\t<disporder><![CDATA[{escape_cdata(disporder_serialized)}]]></disporder>')
+
+        lines.append('\t</properties>')
+
+        # Build stylesheets section
+        lines.append('\t<stylesheets>')
+        stylesheets_dir = workspace_path / "stylesheets"
+        stylesheets_count = 0
+
+        if stylesheets_dir.exists():
+            for ss_meta in stylesheets_meta:
+                if isinstance(ss_meta, dict):
+                    ss_name = ss_meta.get("name", "")
+                    attached_to = ss_meta.get("attached_to", [])
+                else:
+                    ss_name = ss_meta
+                    attached_to = []
+
+                if not ss_name.endswith(".css"):
+                    ss_filename = ss_name + ".css"
+                else:
+                    ss_filename = ss_name
+                    ss_name = ss_name[:-4]  # Remove .css for name attribute
+
+                ss_path = stylesheets_dir / ss_filename
+                if ss_path.exists():
+                    try:
+                        css_content = ss_path.read_text(encoding='utf-8')
+                        # Build attachedto attribute
+                        if attached_to:
+                            attachedto_str = "|".join(attached_to)
+                        else:
+                            # Default to global attachment
+                            attachedto_str = ""
+
+                        if attachedto_str:
+                            lines.append(f'\t\t<stylesheet name="{xml_escape(ss_filename)}" attachedto="{xml_escape(attachedto_str)}" version="{mybb_version}"><![CDATA[{escape_cdata(css_content)}]]>')
+                        else:
+                            lines.append(f'\t\t<stylesheet name="{xml_escape(ss_filename)}" attachedto="" version="{mybb_version}"><![CDATA[{escape_cdata(css_content)}]]>')
+                        lines.append('\t\t</stylesheet>')
+                        stylesheets_count += 1
+                    except Exception as e:
+                        errors.append(f"Error reading stylesheet {ss_filename}: {e}")
+                else:
+                    errors.append(f"Stylesheet file not found: {ss_filename}")
+
+        lines.append('\t</stylesheets>')
+
+        # Build templates section (if present)
+        templates_dir = workspace_path / "templates"
+        templates_count = 0
+
+        template_overrides = meta.get("template_overrides", [])
+        if templates_dir.exists() and (template_overrides or list(templates_dir.glob("*.html"))):
+            lines.append('\t<templates>')
+
+            # Get all template files
+            for template_file in templates_dir.glob("*.html"):
+                template_name = template_file.stem  # Remove .html extension
+                try:
+                    template_content = template_file.read_text(encoding='utf-8')
+                    lines.append(f'\t\t<template name="{xml_escape(template_name)}" version="{mybb_version}"><![CDATA[{escape_cdata(template_content)}]]></template>')
+                    templates_count += 1
+                except Exception as e:
+                    errors.append(f"Error reading template {template_name}: {e}")
+
+            lines.append('\t</templates>')
+
+        lines.append('</theme>')
+
+        xml_content = "\n".join(lines)
+
+        # Write to file if output_path provided
+        if output_path:
+            output = Path(output_path)
+            output.parent.mkdir(parents=True, exist_ok=True)
+            output.write_text(xml_content, encoding='utf-8')
+            return {
+                "success": len(errors) == 0,
+                "errors": errors,
+                "xml": None,
+                "path": str(output),
+                "stylesheets_count": stylesheets_count,
+                "templates_count": templates_count
+            }
+
+        return {
+            "success": len(errors) == 0,
+            "errors": errors,
+            "xml": xml_content,
+            "path": None,
+            "stylesheets_count": stylesheets_count,
+            "templates_count": templates_count
+        }
+
+    def import_theme_xml(
+        self,
+        xml_path: Path,
+        codename: Optional[str] = None,
+        visibility: str = "public"
+    ) -> Dict[str, Any]:
+        """Import theme from MyBB XML format to workspace.
+
+        Parses a MyBB theme XML export file and creates a workspace with:
+        - Stylesheets extracted to stylesheets/ directory
+        - Templates extracted to templates/ directory (if present)
+        - meta.json generated from XML properties
+        - Project registered in database
+
+        Args:
+            xml_path: Path to XML file
+            codename: Optional codename override (defaults to sanitized theme name)
+            visibility: Workspace visibility ("public" or "private")
+
+        Returns:
+            {
+                "success": bool,
+                "codename": str,
+                "workspace_path": str,
+                "stylesheets_count": int,
+                "templates_count": int,
+                "errors": List[str],
+                "warnings": List[str]
+            }
+        """
+        import json
+        import re
+        import xml.etree.ElementTree as ET
+        from pathlib import Path as PathLib
+
+        xml_path = PathLib(xml_path)
+        errors = []
+        warnings = []
+
+        # Validate XML file exists
+        if not xml_path.exists():
+            return {
+                "success": False,
+                "codename": None,
+                "workspace_path": None,
+                "stylesheets_count": 0,
+                "templates_count": 0,
+                "errors": [f"XML file not found: {xml_path}"],
+                "warnings": []
+            }
+
+        # Parse XML file
+        try:
+            tree = ET.parse(xml_path)
+            root = tree.getroot()
+        except ET.ParseError as e:
+            return {
+                "success": False,
+                "codename": None,
+                "workspace_path": None,
+                "stylesheets_count": 0,
+                "templates_count": 0,
+                "errors": [f"Invalid XML: {e}"],
+                "warnings": []
+            }
+
+        # Validate root element is <theme>
+        if root.tag != "theme":
+            return {
+                "success": False,
+                "codename": None,
+                "workspace_path": None,
+                "stylesheets_count": 0,
+                "templates_count": 0,
+                "errors": [f"Invalid theme XML: root element is '{root.tag}', expected 'theme'"],
+                "warnings": []
+            }
+
+        # Extract theme name and version from attributes
+        theme_name = root.get("name", "Unknown Theme")
+        mybb_version = root.get("version", "1839")
+
+        # Sanitize codename from theme name if not provided
+        if not codename:
+            # Convert to lowercase, replace spaces/special chars with underscores
+            codename = re.sub(r'[^a-z0-9]+', '_', theme_name.lower())
+            codename = re.sub(r'_+', '_', codename)  # Collapse multiple underscores
+            codename = codename.strip('_')  # Remove leading/trailing underscores
+
+        # Check if workspace already exists
+        existing_path = self.theme_workspace.get_workspace_path(codename, visibility)
+        if existing_path:
+            return {
+                "success": False,
+                "codename": codename,
+                "workspace_path": None,
+                "stylesheets_count": 0,
+                "templates_count": 0,
+                "errors": [f"Theme workspace already exists: {existing_path}"],
+                "warnings": []
+            }
+
+        # Parse properties section
+        properties = {}
+        properties_elem = root.find("properties")
+        if properties_elem is not None:
+            for prop in properties_elem:
+                # Extract text content (may be in CDATA)
+                prop_value = prop.text or ""
+                properties[prop.tag] = prop_value
+
+        # Extract imgdir for meta.json
+        imgdir = properties.get("imgdir", f"images/{codename}")
+
+        # Parse disporder to get stylesheet order (PHP serialized array)
+        disporder_raw = properties.get("disporder", "a:0:{}")
+        stylesheet_order = {}
+        # Simple extraction of stylesheet names and orders from PHP serialized format
+        # Pattern: s:N:"name.css";i:N;
+        disporder_matches = re.findall(r's:\d+:"([^"]+)";i:(\d+);', disporder_raw)
+        for ss_name, order in disporder_matches:
+            stylesheet_order[ss_name] = int(order)
+
+        # Create workspace
+        try:
+            workspace_path = self.theme_workspace.create_workspace(codename, visibility)
+        except ValueError as e:
+            return {
+                "success": False,
+                "codename": codename,
+                "workspace_path": None,
+                "stylesheets_count": 0,
+                "templates_count": 0,
+                "errors": [str(e)],
+                "warnings": []
+            }
+
+        stylesheets_count = 0
+        templates_count = 0
+
+        try:
+            # Extract stylesheets
+            stylesheets_elem = root.find("stylesheets")
+            stylesheet_meta = []
+
+            if stylesheets_elem is not None:
+                stylesheets_dir = workspace_path / "stylesheets"
+
+                for ss_elem in stylesheets_elem.findall("stylesheet"):
+                    ss_name = ss_elem.get("name", "")
+                    ss_attachedto = ss_elem.get("attachedto", "")
+                    ss_version = ss_elem.get("version", mybb_version)
+
+                    if not ss_name:
+                        warnings.append("Skipping stylesheet with no name attribute")
+                        continue
+
+                    # Get CSS content
+                    css_content = ss_elem.text or ""
+
+                    # Write to file
+                    css_path = stylesheets_dir / ss_name
+                    try:
+                        css_path.write_text(css_content, encoding='utf-8')
+                        stylesheets_count += 1
+
+                        # Build metadata for this stylesheet
+                        attached_list = [a.strip() for a in ss_attachedto.split("|") if a.strip()] if ss_attachedto else []
+                        order = stylesheet_order.get(ss_name, stylesheets_count)
+                        stylesheet_meta.append({
+                            "name": ss_name,
+                            "attached_to": attached_list,
+                            "display_order": order
+                        })
+                    except Exception as e:
+                        warnings.append(f"Failed to write stylesheet {ss_name}: {e}")
+
+            # Sort stylesheets by display_order
+            stylesheet_meta.sort(key=lambda x: x.get("display_order", 999))
+
+            # Extract templates
+            templates_elem = root.find("templates")
+            template_names = []
+
+            if templates_elem is not None:
+                templates_dir = workspace_path / "templates"
+
+                for tpl_elem in templates_elem.findall("template"):
+                    tpl_name = tpl_elem.get("name", "")
+                    tpl_version = tpl_elem.get("version", mybb_version)
+
+                    if not tpl_name:
+                        warnings.append("Skipping template with no name attribute")
+                        continue
+
+                    # Get template content
+                    template_content = tpl_elem.text or ""
+
+                    # Write to file (use .html extension)
+                    template_path = templates_dir / f"{tpl_name}.html"
+                    try:
+                        template_path.write_text(template_content, encoding='utf-8')
+                        templates_count += 1
+                        template_names.append(tpl_name)
+                    except Exception as e:
+                        warnings.append(f"Failed to write template {tpl_name}: {e}")
+
+            # Generate meta.json
+            meta = create_default_theme_meta(
+                codename=codename,
+                display_name=theme_name,
+                author=self.config.default_author,
+                version="1.0.0",  # Imported themes start at 1.0.0
+                description=f"Imported from {xml_path.name}",
+                mybb_compatibility="18*",
+                visibility=visibility,
+                parent_theme=None
+            )
+
+            # Add theme-specific fields
+            meta['stylesheets'] = stylesheet_meta
+            meta['template_overrides'] = template_names
+            meta['imported_from'] = str(xml_path.name)
+            meta['imported_mybb_version'] = mybb_version
+            meta['files'] = {
+                "images": imgdir
+            }
+
+            # Store raw properties for reference
+            meta['_xml_properties'] = properties
+
+            # Write meta.json
+            self.theme_workspace.write_meta(codename, meta, visibility)
+
+            # Generate README
+            readme_content = self._generate_theme_readme(
+                codename=codename,
+                display_name=theme_name,
+                description=f"Imported from {xml_path.name}",
+                author=self.config.default_author,
+                version="1.0.0",
+                visibility=visibility,
+                compatibility="18*",
+                parent_theme=None,
+                stylesheets=[s["name"] for s in stylesheet_meta],
+                workspace_path=str(workspace_path)
+            )
+            readme_path = workspace_path / "README.md"
+            readme_path.write_text(readme_content, encoding='utf-8')
+
+            # Register in database
+            project_id = self.db.add_project(
+                codename=codename,
+                display_name=theme_name,
+                workspace_path=str(workspace_path),
+                type='theme',
+                visibility=visibility,
+                status='development',
+                version="1.0.0",
+                description=f"Imported from {xml_path.name}",
+                author=self.config.default_author,
+                mybb_compatibility="18*"
+            )
+
+            return {
+                "success": True,
+                "codename": codename,
+                "workspace_path": str(workspace_path),
+                "stylesheets_count": stylesheets_count,
+                "templates_count": templates_count,
+                "errors": [],
+                "warnings": warnings,
+                "project_id": project_id
+            }
+
+        except Exception as e:
+            # Clean up workspace on failure
+            import shutil
+            if workspace_path.exists():
+                shutil.rmtree(workspace_path)
+
+            return {
+                "success": False,
+                "codename": codename,
+                "workspace_path": None,
+                "stylesheets_count": 0,
+                "templates_count": 0,
+                "errors": [f"Import failed: {e}"],
+                "warnings": warnings
+            }
