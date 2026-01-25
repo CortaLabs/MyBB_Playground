@@ -463,10 +463,82 @@ class MyBBDatabase:
         with self.cursor() as cur:
             cur.execute(
                 f"SELECT tid, name, pid, def, properties, stylesheets "
-                f"FROM {self.table('themes')} WHERE name = %s",
+                f"FROM {self.table('themes')} WHERE LOWER(name) = LOWER(%s)",
                 (name,)
             )
             return cur.fetchone()
+
+    def create_theme(self, name: str, pid: int = 1, properties: str = "", stylesheets: str = "", allowedgroups: str = "") -> int:
+        """Create a new theme.
+
+        Args:
+            name: Theme name
+            pid: Parent theme ID (default: 1 = MyBB Master Style)
+            properties: Serialized theme properties (default: empty)
+            stylesheets: Serialized stylesheet mapping (default: empty)
+            allowedgroups: Allowed usergroups (default: empty = all)
+
+        Returns:
+            New theme ID (tid)
+        """
+        with self.cursor() as cur:
+            cur.execute(
+                f"INSERT INTO {self.table('themes')} (name, pid, def, properties, stylesheets, allowedgroups) "
+                f"VALUES (%s, %s, 0, %s, %s, %s)",
+                (name, pid, properties, stylesheets, allowedgroups)
+            )
+            return cur.lastrowid
+
+    def update_theme(self, tid: int, **kwargs) -> bool:
+        """Update theme direct columns.
+
+        Note: 'logo' is NOT a direct column - it's stored in the serialized 'properties'
+        field. Use the mcp_bridge theme:set_property action to update logo.
+
+        Args:
+            tid: Theme ID
+            **kwargs: Fields to update (name, pid, properties, stylesheets, allowedgroups, def)
+
+        Returns:
+            True if update succeeded
+        """
+        if not kwargs:
+            return False
+
+        # Only allow safe fields to be updated (logo is NOT a column - it's in properties)
+        allowed_fields = {"name", "pid", "properties", "stylesheets", "allowedgroups", "def"}
+        fields_to_update = {k: v for k, v in kwargs.items() if k in allowed_fields}
+
+        if not fields_to_update:
+            return False
+
+        set_clauses = [f"{k} = %s" for k in fields_to_update.keys()]
+        values = list(fields_to_update.values()) + [tid]
+
+        with self.cursor() as cur:
+            cur.execute(
+                f"UPDATE {self.table('themes')} SET {', '.join(set_clauses)} WHERE tid = %s",
+                values
+            )
+            return cur.rowcount > 0
+
+    def set_default_theme(self, tid: int) -> bool:
+        """Set a theme as the default (active) theme.
+
+        Clears the default flag from all other themes and sets it for the specified theme.
+
+        Args:
+            tid: Theme ID to set as default
+
+        Returns:
+            True if update succeeded
+        """
+        with self.cursor() as cur:
+            # Clear default flag from all themes
+            cur.execute(f"UPDATE {self.table('themes')} SET def = 0 WHERE def = 1")
+            # Set this theme as default
+            cur.execute(f"UPDATE {self.table('themes')} SET def = 1 WHERE tid = %s", (tid,))
+            return cur.rowcount > 0
 
     def list_stylesheets(self, tid: int | None = None) -> list[dict[str, Any]]:
         """List stylesheets, optionally filtered by theme."""
@@ -1434,15 +1506,34 @@ class MyBBDatabase:
             MyBB will regenerate them on next access.
             Common cache types: settings, plugins, usergroups, forums,
                                badwords, smilies, posticons, etc.
+
+            PROTECTED CACHES (never cleared):
+            - version: Contains version_code, clearing breaks the forum
+            - internal_settings: Contains encryption_key, clearing breaks sessions
+            - plugins: Contains active plugin list, clearing deactivates all plugins
         """
+        # Critical caches that should NEVER be cleared
+        protected_caches = ('version', 'internal_settings', 'plugins')
+
         with self.cursor() as cur:
             if cache_type == "all":
-                # Clear all cache entries
-                cur.execute(f"DELETE FROM {self.table('datacache')}")
+                # Clear all cache entries EXCEPT protected ones
+                placeholders = ','.join(['%s'] * len(protected_caches))
+                cur.execute(
+                    f"DELETE FROM {self.table('datacache')} WHERE title NOT IN ({placeholders})",
+                    protected_caches
+                )
                 return {
                     "status": "success",
-                    "message": "All caches cleared",
+                    "message": "All caches cleared (except protected: version, internal_settings, plugins)",
                     "rows_affected": cur.rowcount
+                }
+            elif cache_type in protected_caches:
+                # Refuse to clear protected caches
+                return {
+                    "status": "error",
+                    "message": f"Cache '{cache_type}' is protected and cannot be cleared",
+                    "rows_affected": 0
                 }
             else:
                 # Clear specific cache
@@ -1582,6 +1673,11 @@ class MyBBDatabase:
     def get_plugins_cache(self) -> dict[str, Any]:
         """Get active plugins from datacache.
 
+        MyBB stores active plugins in format:
+        a:1:{s:6:"active";a:N:{s:X:"plugin1";s:X:"plugin1";s:Y:"plugin2";s:Y:"plugin2";...}}
+
+        The 'active' key maps to an associative array where keys and values are both plugin names.
+
         Returns:
             Dict with 'raw' (serialized PHP) and 'plugins' (list of active plugin codenames)
         """
@@ -1595,14 +1691,27 @@ class MyBBDatabase:
                 return {"raw": "", "plugins": []}
 
             raw_cache = row["cache"]
-            # Parse PHP serialized array (simple case: a:0:{} or a:N:{i:0;s:X:"name";...})
             plugins = []
             if raw_cache and raw_cache != "a:0:{}":
-                # Extract plugin names from PHP serialized format
-                # Pattern: s:LENGTH:"plugin_codename"
                 import re
-                pattern = r's:\d+:"([^"]+)"'
-                plugins = re.findall(pattern, raw_cache)
+                # MyBB format: a:1:{s:6:"active";a:N:{...}}
+                # Extract the 'active' array contents and find plugin names
+                # Look for the active array pattern
+                active_match = re.search(r's:6:"active";(a:\d+:\{[^}]*\})', raw_cache)
+                if active_match:
+                    active_content = active_match.group(1)
+                    # Extract unique plugin names (they appear as both key and value)
+                    pattern = r's:\d+:"([^"]+)"'
+                    all_strings = re.findall(pattern, active_content)
+                    # Deduplicate (each plugin appears twice: as key and value)
+                    plugins = list(dict.fromkeys(all_strings))
+                else:
+                    # Fallback: try to extract any plugin names from legacy format
+                    # Pattern: s:LENGTH:"plugin_codename" - exclude known non-plugin strings
+                    pattern = r's:\d+:"([^"]+)"'
+                    all_strings = re.findall(pattern, raw_cache)
+                    # Filter out known structural keys
+                    plugins = [s for s in all_strings if s not in ('active',)]
 
             return {"raw": raw_cache, "plugins": plugins}
 
@@ -1612,23 +1721,33 @@ class MyBBDatabase:
         Note: This updates the cache but does NOT execute PHP _activate/_deactivate functions.
         The MCP server cannot execute PHP code.
 
+        Uses INSERT...ON DUPLICATE KEY UPDATE to handle missing cache row gracefully.
+        This can happen if the datacache was cleared or corrupted.
+
         Args:
             plugins: List of active plugin codenames
         """
-        # Generate PHP serialized array format
+        # Generate PHP serialized array format for MyBB's cache structure
+        # MyBB expects: a:1:{s:6:"active";a:N:{s:X:"plugin1";s:X:"plugin1";...}}
         if not plugins:
-            serialized = "a:0:{}"
+            # Empty active plugins array wrapped in cache structure
+            serialized = 'a:1:{s:6:"active";a:0:{}}'
         else:
-            # Format: a:N:{i:0;s:LEN:"name";i:1;s:LEN:"name2";...}
+            # Build the active plugins associative array
+            # Format: s:LEN:"name";s:LEN:"name"; (key and value are both the plugin name)
             parts = []
-            for i, plugin in enumerate(plugins):
-                parts.append(f'i:{i};s:{len(plugin)}:"{plugin}"')
-            serialized = f"a:{len(plugins)}:{{{';'.join(parts)}}}"
+            for plugin in plugins:
+                parts.append(f's:{len(plugin)}:"{plugin}";s:{len(plugin)}:"{plugin}"')
+            active_array = f"a:{len(plugins)}:{{{';'.join(parts)}}}"
+            serialized = f'a:1:{{s:6:"active";{active_array}}}'
 
         with self.cursor() as cur:
+            # Use INSERT...ON DUPLICATE KEY UPDATE to handle missing row
             cur.execute(
-                f"UPDATE {self.table('datacache')} SET cache = %s WHERE title = %s",
-                (serialized, "plugins")
+                f"""INSERT INTO {self.table('datacache')} (title, cache)
+                    VALUES (%s, %s)
+                    ON DUPLICATE KEY UPDATE cache = VALUES(cache)""",
+                ("plugins", serialized)
             )
 
     def is_plugin_installed(self, codename: str) -> bool:
@@ -1642,6 +1761,35 @@ class MyBBDatabase:
         """
         cache = self.get_plugins_cache()
         return codename in cache["plugins"]
+
+    def restore_plugins_cache(self, plugins: list[str]) -> dict[str, Any]:
+        """Restore the plugins cache from a list of plugin codenames.
+
+        This method is used to recover from a corrupted or missing plugins cache.
+        It creates the cache row if it doesn't exist.
+
+        Args:
+            plugins: List of plugin codenames to mark as active
+
+        Returns:
+            Dict with status and details of the restoration
+        """
+        try:
+            self.update_plugins_cache(plugins)
+            # Verify the update worked
+            cache = self.get_plugins_cache()
+            return {
+                "success": True,
+                "plugins_restored": plugins,
+                "plugins_in_cache": cache["plugins"],
+                "message": f"Restored {len(plugins)} plugins to cache"
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "error": str(e),
+                "message": "Failed to restore plugins cache"
+            }
 
     # ==================== Task Operations ====================
 

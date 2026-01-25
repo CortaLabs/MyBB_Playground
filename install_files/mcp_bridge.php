@@ -118,6 +118,19 @@ $options = getopt('', [
     'restore',
     'delete',
     'soft',
+    'xml:',
+    'no-stylesheets',
+    'no-templates',
+    'force-version',
+    'parent:',
+    'key:',
+    'value:',
+    'templateset:',
+    'logo:',
+    'editortheme:',
+    'source_sid:',
+    'content:',
+    'attachedto:',
     'help'
 ]);
 
@@ -395,6 +408,7 @@ chdir(__DIR__);
 
 // Define required constants before loading MyBB
 define('IN_MYBB', 1);
+define('IN_ADMINCP', 1);  // Needed for plugins that conditionally load admin functions
 define('THIS_SCRIPT', 'mcp_bridge.php');
 
 // Suppress plugin loading during bootstrap - we'll handle plugins manually
@@ -917,6 +931,52 @@ switch ($action) {
         ]);
         break;
 
+    case 'template:list':
+        // List templates with optional filtering
+        // Optional: --sid (filter by template set ID, e.g., -2 for master, 1+ for custom sets)
+        // Optional: --title (filter by title prefix, useful for plugin templates like "myplugin_")
+        $sid = isset($options['sid']) ? (int)$options['sid'] : null;
+        $title_prefix = $options['title'] ?? null;
+
+        $where_clauses = [];
+        if ($sid !== null) {
+            $where_clauses[] = "sid = '{$sid}'";
+        }
+        if ($title_prefix !== null && $title_prefix !== '') {
+            $where_clauses[] = "title LIKE '" . $db->escape_string($title_prefix) . "%'";
+        }
+
+        $where = !empty($where_clauses) ? implode(' AND ', $where_clauses) : '1=1';
+
+        $query = $db->simple_select(
+            'templates',
+            'tid, title, template, sid, version, dateline',
+            $where,
+            ['order_by' => 'title', 'order_dir' => 'ASC']
+        );
+
+        $templates = [];
+        while ($row = $db->fetch_array($query)) {
+            $templates[] = [
+                'tid' => (int)$row['tid'],
+                'title' => $row['title'],
+                'template' => $row['template'],
+                'sid' => (int)$row['sid'],
+                'version' => $row['version'],
+                'dateline' => (int)$row['dateline']
+            ];
+        }
+
+        respond(true, [
+            'templates' => $templates,
+            'count' => count($templates),
+            'filters' => [
+                'sid' => $sid,
+                'title_prefix' => $title_prefix
+            ]
+        ]);
+        break;
+
     // ========================================================================
     // Stylesheet Actions (MyBB-native)
     // ========================================================================
@@ -963,6 +1023,493 @@ switch ($action) {
             "name" => $stylesheet['name'],
             "cache_updated" => $cache_ok,
             "actions_taken" => ["stylesheet_updated", "stylesheet_cache_refreshed"]
+        ]);
+        break;
+
+    case 'theme:import':
+        require_once MYBB_ROOT . "admin/inc/functions_themes.php";
+        require_once MYBB_ROOT . "admin/inc/functions.php";
+
+        // Get XML content from --xml argument
+        $xml = $options['xml'] ?? null;
+        if (!$xml) {
+            respond(false, [], 'No XML provided (--xml=<path_or_content>)');
+        }
+
+        // If it's a file path, read the file
+        if (file_exists($xml)) {
+            $xml_content = file_get_contents($xml);
+            if ($xml_content === false) {
+                respond(false, ['xml_path' => $xml], 'Failed to read XML file');
+            }
+            $xml = $xml_content;
+        }
+
+        // Build import options
+        $import_options = [
+            'no_stylesheets' => isset($options['no-stylesheets']) ? 1 : 0,
+            'no_templates' => isset($options['no-templates']) ? 1 : 0,
+            'version_compat' => isset($options['force-version']) ? 1 : 0,
+            'parent' => isset($options['parent']) ? (int)$options['parent'] : 1,
+        ];
+
+        // Override name if provided
+        if (isset($options['name']) && !empty($options['name'])) {
+            $import_options['name'] = $options['name'];
+        }
+
+        // Call MyBB's import_theme_xml function
+        $result = import_theme_xml($xml, $import_options);
+
+        // Map return codes to response
+        if ($result > 0) {
+            // Success - result is the new theme ID
+            $theme = get_theme($result);
+            respond(true, [
+                'theme_id' => $result,
+                'theme_name' => $theme ? $theme['name'] : 'Unknown',
+                'import_options' => $import_options
+            ]);
+        } else {
+            // Error codes from import_theme_xml
+            $errors = [
+                -1 => 'Invalid XML format',
+                -2 => 'Version mismatch (use --force-version to override)',
+                -3 => 'Theme name already exists (use --name to override)',
+                -4 => 'Security violation in templates',
+            ];
+            $error_message = $errors[$result] ?? 'Unknown error';
+            respond(false, [
+                'error' => $error_message,
+                'code' => $result,
+                'import_options' => $import_options
+            ], $error_message);
+        }
+        break;
+
+    case 'theme:update_stylesheet_list':
+        // Updates theme properties (disporder, stylesheets arrays) after stylesheet creation
+        // This is the critical missing step that causes stylesheets to not display
+        require_once MYBB_ROOT . "admin/inc/functions_themes.php";
+        require_once MYBB_ROOT . "admin/inc/functions.php";
+
+        $tid = isset($options['tid']) ? (int)$options['tid'] : 0;
+        if ($tid <= 0) {
+            respond(false, [], "Required: --tid (theme ID)");
+        }
+
+        // Query theme WITH properties instead of using incomplete get_theme()
+        // get_theme() only fetches tid, name, pid, allowedgroups - missing properties/stylesheets
+        // This caused templateset to be wiped when update_theme_stylesheet_list() rebuilt properties
+        $query = $db->simple_select(
+            'themes',
+            'tid, name, pid, properties, stylesheets',
+            "tid = ".(int)$tid
+        );
+        $theme = $db->fetch_array($query);
+
+        if (!$theme) {
+            respond(false, ["tid" => $tid], "Theme not found");
+        }
+
+        // Unserialize properties for update_theme_stylesheet_list
+        if (isset($theme['properties'])) {
+            $theme['properties'] = my_unserialize($theme['properties']);
+        }
+
+        // Call the critical function that builds disporder and stylesheets arrays
+        // Parameters: $tid, $theme, $update_disporder
+        update_theme_stylesheet_list($tid, $theme, true);
+
+        // Verify the update by re-fetching theme
+        $updated_theme = get_theme($tid);
+        $properties = my_unserialize($updated_theme['properties']);
+        $stylesheets = my_unserialize($updated_theme['stylesheets']);
+
+        respond(true, [
+            "tid" => $tid,
+            "theme_name" => $theme['name'],
+            "disporder_count" => is_array($properties['disporder']) ? count($properties['disporder']) : 0,
+            "stylesheets_pages" => is_array($stylesheets) ? count($stylesheets) : 0
+        ]);
+        break;
+
+    case 'theme:set_property':
+        // Set a property in a theme's properties array
+        // Required: --tid, --key, --value
+        $tid = isset($options['tid']) ? (int)$options['tid'] : 0;
+        $key = $options['key'] ?? '';
+        $value = $options['value'] ?? '';
+
+        if ($tid < 1) {
+            respond(false, [], "Required: --tid (theme ID)");
+        }
+        if ($key === '') {
+            respond(false, [], "Required: --key (property name)");
+        }
+
+        // Query theme directly to get properties (get_theme() doesn't include properties!)
+        $query = $db->simple_select('themes', 'tid, name, properties', "tid='{$tid}'");
+        $theme = $db->fetch_array($query);
+        if (!$theme) {
+            respond(false, ["tid" => $tid], "Theme not found");
+        }
+
+        // Unserialize properties, add/update the key, re-serialize
+        $properties = my_unserialize($theme['properties']);
+        if (!is_array($properties)) {
+            $properties = [];
+        }
+
+        // Type cast numeric properties (templateset should be int, not string)
+        if ($key === 'templateset') {
+            $properties[$key] = (int)$value;
+        } else {
+            $properties[$key] = $value;
+        }
+
+        // Update the theme
+        $db->update_query("themes", [
+            "properties" => my_serialize($properties)
+        ], "tid='{$tid}'");
+
+        respond(true, [
+            "tid" => $tid,
+            "key" => $key,
+            "value" => $value,
+            "properties_count" => count($properties)
+        ]);
+        break;
+
+    case 'templateset:create':
+        // Create a new template set or return existing one
+        // Required: --title
+        $title = $options['title'] ?? null;
+        if (!$title) {
+            respond(false, [], "Missing required parameter: title");
+        }
+
+        // Check if templateset already exists
+        $query = $db->simple_select('templatesets', 'sid, title', "title = '".$db->escape_string($title)."'");
+        $existing = $db->fetch_array($query);
+
+        if ($existing) {
+            respond(true, [
+                'sid' => (int)$existing['sid'],
+                'title' => $existing['title'],
+                'existed' => true
+            ]);
+        }
+
+        // Create new templateset
+        $sid = $db->insert_query('templatesets', [
+            'title' => $db->escape_string($title)
+        ]);
+
+        respond(true, [
+            'sid' => (int)$sid,
+            'title' => $title,
+            'existed' => false
+        ]);
+        break;
+
+    case 'templateset:copy_master':
+        // Copy all templates from source templateset to target templateset
+        // Required: --sid (target templateset ID)
+        // Optional: --source_sid (source templateset ID, default -2 for master)
+        // Optional: --force (overwrite existing templates)
+        $target_sid = $options['sid'] ?? null;
+        $source_sid = $options['source_sid'] ?? -2;
+        $force = isset($options['force']);
+
+        if (!$target_sid) {
+            respond(false, null, 'Missing required parameter: sid');
+        }
+
+        // Verify target templateset exists
+        $query = $db->simple_select('templatesets', 'sid, title', "sid = ".(int)$target_sid);
+        $templateset = $db->fetch_array($query);
+        if (!$templateset) {
+            respond(false, null, 'Templateset not found: '.$target_sid);
+        }
+
+        // Check if target already has templates (unless force)
+        if (!$force) {
+            $existing_count = $db->fetch_field(
+                $db->simple_select('templates', 'COUNT(*) as cnt', "sid = ".(int)$target_sid),
+                'cnt'
+            );
+            if ($existing_count > 0) {
+                respond(false, null, 'Target templateset already has '.$existing_count.' templates. Use --force to overwrite.');
+            }
+        }
+
+        // Get all templates from source
+        $query = $db->simple_select('templates', 'title, template, version', "sid = ".(int)$source_sid);
+        $copied = 0;
+        while ($template = $db->fetch_array($query)) {
+            // Delete existing if force mode
+            if ($force) {
+                $db->delete_query('templates', "sid = ".(int)$target_sid." AND title = '".$db->escape_string($template['title'])."'");
+            }
+
+            $db->insert_query('templates', [
+                'title' => $db->escape_string($template['title']),
+                'template' => $db->escape_string($template['template']),
+                'sid' => (int)$target_sid,
+                'version' => $template['version'] ?? '1800',
+                'dateline' => TIME_NOW
+            ]);
+            $copied++;
+        }
+
+        respond(true, [
+            'sid' => (int)$target_sid,
+            'templateset_title' => $templateset['title'],
+            'source_sid' => (int)$source_sid,
+            'templates_copied' => $copied
+        ]);
+        break;
+
+    case 'theme:create':
+        require_once MYBB_ROOT . "admin/inc/functions_themes.php";
+
+        $name = $options['name'] ?? null;
+        $pid = (int)($options['pid'] ?? 1);
+        $templateset = $options['templateset'] ?? null;
+        $logo = $options['logo'] ?? null;
+        $editortheme = $options['editortheme'] ?? null;
+
+        if (!$name) {
+            respond(false, null, 'Missing required parameter: name');
+        }
+
+        // Check if theme already exists
+        $query = $db->simple_select('themes', '*', "name = '".$db->escape_string($name)."'");
+        $existing = $db->fetch_array($query);
+
+        if ($existing) {
+            $props = my_unserialize($existing['properties']);
+            respond(true, [
+                'tid' => (int)$existing['tid'],
+                'name' => $existing['name'],
+                'pid' => (int)$existing['pid'],
+                'templateset' => $props['templateset'] ?? null,
+                'existed' => true
+            ]);
+        }
+
+        // Build properties array
+        $properties = [];
+        if ($templateset !== null) {
+            $properties['templateset'] = (int)$templateset;
+        }
+        if ($logo !== null) {
+            $properties['logo'] = $logo;
+        }
+        if ($editortheme !== null) {
+            $properties['editortheme'] = $editortheme;
+        }
+
+        // Create theme using MyBB function
+        $tid = build_new_theme($name, $properties, $pid);
+
+        // Verify templateset was set correctly (build_new_theme may have inherited)
+        if ($templateset !== null) {
+            $query = $db->simple_select('themes', 'properties', "tid = ".(int)$tid);
+            $theme = $db->fetch_array($query);
+            $props = my_unserialize($theme['properties']);
+
+            if (($props['templateset'] ?? null) != $templateset) {
+                // Force the templateset we want
+                $props['templateset'] = (int)$templateset;
+                $db->update_query('themes', [
+                    'properties' => my_serialize($props)
+                ], "tid = ".(int)$tid);
+            }
+        }
+
+        // Get final theme data
+        $query = $db->simple_select('themes', '*', "tid = ".(int)$tid);
+        $theme = $db->fetch_array($query);
+        $props = my_unserialize($theme['properties']);
+
+        respond(true, [
+            'tid' => (int)$tid,
+            'name' => $theme['name'],
+            'pid' => (int)$theme['pid'],
+            'templateset' => $props['templateset'] ?? null,
+            'existed' => false
+        ]);
+        break;
+
+    case 'theme:get':
+        $tid = $options['tid'] ?? null;
+        $name = $options['name'] ?? null;
+
+        if (!$tid && !$name) {
+            respond(false, null, 'Missing required parameter: tid or name');
+        }
+
+        // Build query condition
+        if ($tid) {
+            $where = "tid = ".(int)$tid;
+        } else {
+            $where = "name = '".$db->escape_string($name)."'";
+        }
+
+        $query = $db->simple_select('themes', '*', $where);
+        $theme = $db->fetch_array($query);
+
+        if (!$theme) {
+            respond(false, null, 'Theme not found');
+        }
+
+        // Unserialize properties for response
+        $properties = my_unserialize($theme['properties']);
+        $stylesheets = my_unserialize($theme['stylesheets']);
+
+        respond(true, [
+            'tid' => (int)$theme['tid'],
+            'name' => $theme['name'],
+            'pid' => (int)$theme['pid'],
+            'def' => (int)$theme['def'],
+            'properties' => $properties,
+            'stylesheets' => $stylesheets,
+            'allowedgroups' => $theme['allowedgroups']
+        ]);
+        break;
+
+    case 'theme:set_default':
+        // Set a theme as the default theme
+        // This resets all other themes and sets the specified one
+        $tid = $options['tid'] ?? null;
+
+        if (!$tid) {
+            respond(false, null, 'Missing required parameter: tid');
+        }
+
+        $tid = (int)$tid;
+
+        // Verify theme exists
+        $query = $db->simple_select('themes', '*', "tid='{$tid}'");
+        if (!$db->num_rows($query)) {
+            respond(false, null, "Theme not found: {$tid}");
+        }
+
+        // Reset all themes to not default
+        $db->update_query('themes', array('def' => 0), "def='1'");
+
+        // Set this theme as default
+        $db->update_query('themes', array('def' => 1), "tid='{$tid}'");
+
+        // Update cache
+        $cache->update_default_theme();
+
+        respond(true, [
+            'tid' => $tid,
+            'set_default' => true
+        ]);
+        break;
+
+    case 'stylesheet:create':
+        require_once MYBB_ROOT.'admin/inc/functions_themes.php';
+
+        $tid = $options['tid'] ?? null;
+        $name = $options['name'] ?? null;
+        $content = $options['content'] ?? null;
+        $attachedto = $options['attachedto'] ?? '';
+
+        if (!$tid || !$name || $content === null) {
+            respond(false, null, 'Missing required parameters: tid, name, content');
+        }
+
+        $tid = (int)$tid;
+
+        // Verify theme exists
+        $query = $db->simple_select('themes', 'tid', "tid = ".$tid);
+        if (!$db->fetch_array($query)) {
+            respond(false, null, 'Theme not found: '.$tid);
+        }
+
+        // Check if stylesheet exists for this theme
+        $query = $db->simple_select('themestylesheets', '*', "tid = ".$tid." AND name = '".$db->escape_string($name)."'");
+        $existing = $db->fetch_array($query);
+
+        $updated = false;
+
+        if ($existing) {
+            // Update existing stylesheet
+            $sid = (int)$existing['sid'];
+            $db->update_query('themestylesheets', [
+                'stylesheet' => $db->escape_string($content),
+                'attachedto' => $db->escape_string($attachedto),
+                'lastmodified' => TIME_NOW
+            ], "sid = ".$sid);
+            $updated = true;
+        } else {
+            // Insert new stylesheet
+            $sid = $db->insert_query('themestylesheets', [
+                'name' => $db->escape_string($name),
+                'tid' => $tid,
+                'attachedto' => $db->escape_string($attachedto),
+                'stylesheet' => $db->escape_string($content),
+                'cachefile' => $db->escape_string($name),
+                'lastmodified' => TIME_NOW
+            ]);
+        }
+
+        // Create cache directory and file
+        $cache_dir = MYBB_ROOT.'cache/themes/theme'.$tid.'/';
+        if (!is_dir($cache_dir)) {
+            @mkdir($cache_dir, 0755, true);
+        }
+
+        $cachefile = $cache_dir.$name;
+        @file_put_contents($cachefile, $content);
+
+        respond(true, [
+            'sid' => $sid,
+            'tid' => $tid,
+            'name' => $name,
+            'cachefile' => 'cache/themes/theme'.$tid.'/'.$name,
+            'updated' => $updated
+        ]);
+        break;
+
+    case 'stylesheet:list':
+        // List stylesheets with optional theme filtering
+        // Optional: --tid (filter by theme ID)
+        $tid = isset($options['tid']) ? (int)$options['tid'] : null;
+
+        $where = $tid !== null ? "tid = '{$tid}'" : '1=1';
+
+        $query = $db->simple_select(
+            'themestylesheets',
+            'sid, name, tid, stylesheet, cachefile, lastmodified, attachedto',
+            $where,
+            ['order_by' => 'name', 'order_dir' => 'ASC']
+        );
+
+        $stylesheets = [];
+        while ($row = $db->fetch_array($query)) {
+            $stylesheets[] = [
+                'sid' => (int)$row['sid'],
+                'name' => $row['name'],
+                'tid' => (int)$row['tid'],
+                'stylesheet' => $row['stylesheet'],
+                'cachefile' => $row['cachefile'],
+                'lastmodified' => (int)$row['lastmodified'],
+                'attachedto' => $row['attachedto']
+            ];
+        }
+
+        respond(true, [
+            'stylesheets' => $stylesheets,
+            'count' => count($stylesheets),
+            'filters' => [
+                'tid' => $tid
+            ]
         ]);
         break;
 
@@ -2141,7 +2688,15 @@ switch ($action) {
             'template:write',
             'template:find_replace',
             'template:batch_write',
+            'templateset:create',
+            'templateset:copy_master',
             'stylesheet:write',
+            'stylesheet:create',
+            'theme:import',
+            'theme:update_stylesheet_list',
+            'theme:create',
+            'theme:get',
+            'theme:set_default',
             'forum:create',
             'forum:update',
             'forum:delete',
@@ -2365,7 +2920,17 @@ switch ($action) {
                 'template:write',
                 'template:find_replace',
                 'template:batch_write',
+                'template:list',
+                'templateset:create',
+                'templateset:copy_master',
                 'stylesheet:write',
+                'stylesheet:create',
+                'stylesheet:list',
+                'theme:import',
+                'theme:update_stylesheet_list',
+                'theme:create',
+                'theme:get',
+                'theme:set_default',
                 'forum:create',
                 'forum:update',
                 'forum:delete',
