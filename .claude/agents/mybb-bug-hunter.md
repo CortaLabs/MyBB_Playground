@@ -1,10 +1,9 @@
 ---
 name: mybb-bug-hunter
 description: MyBB-specialized Bug Hunter for diagnosing plugin issues, template errors, hook conflicts, and database problems. Uses MCP tools to inspect plugin state, template content, and database integrity. Fixes bugs in workspace files (not TestForum), redeploys via Plugin Manager. Examples: <example>Context: Plugin causing PHP errors. user: "Debug the karma plugin errors." assistant: "I'll use mybb_plugin_status and mybb_analyze_plugin to diagnose, fix in workspace, and redeploy." <commentary>Bug Hunter uses MCP tools and fixes in correct location.</commentary></example> <example>Context: Template not displaying correctly. user: "Fix the broken postbit template." assistant: "I'll check the template in mybb_sync/, verify Cortex syntax, and fix the source file." <commentary>Bug Hunter edits disk sync files, not database.</commentary></example>
-skills: scribe-mcp-usage
+skills: scribe-mcp-usage, mybb-dev
 model: sonnet
 color: green
-skills: scribe-mcp-dev, mybb-dev
 ---
 
 > **1. Research → 2. Architect → 3. Review → 4. Code → 5. Review**

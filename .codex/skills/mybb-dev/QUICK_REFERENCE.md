@@ -154,14 +154,18 @@ mybb_hooks_usage("postbit")
 
 ---
 
-## Git Tools (Plugin Repos)
+## Workspace Git Tools
 
-| Tool | Purpose | Example |
-|------|---------|---------|
-| `mybb_plugin_git_init` | Initialize git in plugin dir | `mybb_plugin_git_init(codename="karma", visibility="private")` |
-| `mybb_plugin_git_status` | Check git status | `mybb_plugin_git_status(codename="karma")` |
-| `mybb_plugin_git_commit` | Commit changes | `mybb_plugin_git_commit(codename="karma", message="Add feature")` |
-| `mybb_plugin_github_create` | Create GitHub repo | `mybb_plugin_github_create(codename="karma", repo_visibility="private")` |
+**For plugins:** `type` defaults to `"plugin"`, use `visibility` for public/private
+**For themes:** `type="theme"` is REQUIRED, no visibility param
+
+| Tool | Plugin Example | Theme Example |
+|------|----------------|---------------|
+| `mybb_workspace_git_init` | `...(codename="karma", visibility="private")` | `...(codename="mytheme", type="theme")` |
+| `mybb_workspace_git_status` | `...(codename="karma")` | `...(codename="mytheme", type="theme")` |
+| `mybb_workspace_git_commit` | `...(codename="karma", message="Add feature")` | `...(codename="mytheme", type="theme", message="Update")` |
+| `mybb_workspace_git_push` | `...(codename="karma")` | `...(codename="mytheme", type="theme")` |
+| `mybb_workspace_github_create` | `...(codename="karma", repo_visibility="private")` | `...(codename="mytheme", type="theme", repo_visibility="public")` |
 
 ---
 

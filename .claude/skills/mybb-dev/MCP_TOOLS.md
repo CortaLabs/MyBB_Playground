@@ -936,56 +936,66 @@ TASKS → Manage scheduled tasks
 
 ---
 
-### 11. Plugin Git (6 tools)
+### 11. Workspace Git (7 tools)
 
-**`mybb_plugin_git_list(type)`**
-- **Purpose:** List plugins/themes with git initialized
-- **When to use:** Finding git-tracked projects
+**Type Parameter (applies to all tools below):**
+- `type="plugin"` (default) — for plugins, uses `visibility` param (public/private)
+- `type="theme"` (REQUIRED for themes) — themes have no visibility, stored in `plugin_manager/themes/`
+
+**`mybb_workspace_git_list(type)`**
+- **Purpose:** List plugin/theme workspaces with git initialized
+- **When to use:** Finding git-tracked workspace projects
 - **Key params:** `type` ("plugins", "themes", "all")
-- **Example:** `mybb_plugin_git_list(type="plugins")`
-- **Related:** `mybb_plugin_git_status`
+- **Example:** `mybb_workspace_git_list(type="themes")`
+- **Related:** `mybb_workspace_git_status`
 
-**`mybb_plugin_git_init(codename, type, visibility, remote, branch)`**
-- **Purpose:** Initialize git in plugin/theme (nested repo)
-- **When to use:** Starting version control for plugin
-- **Key params:** `codename` (required), `type` (optional), `visibility` (optional), `remote` (optional), `branch="main"`
-- **Example:** `mybb_plugin_git_init(codename="my_plugin", type="plugin", visibility="private")`
-- **Related:** `mybb_plugin_github_create`
+**`mybb_workspace_git_init(codename, type, visibility, remote, branch)`**
+- **Purpose:** Initialize git in plugin/theme workspace (nested repo)
+- **When to use:** Starting version control for workspace
+- **Key params:** `codename` (required), `type` ("plugin"|"theme", default "plugin"), `visibility` (plugins only), `branch="main"`
+- **Plugin example:** `mybb_workspace_git_init(codename="my_plugin", visibility="private")`
+- **Theme example:** `mybb_workspace_git_init(codename="my_theme", type="theme")`
+- **Related:** `mybb_workspace_github_create`
 
-**`mybb_plugin_github_create(codename, type, visibility, repo_visibility, repo_name, description)`**
-- **Purpose:** Create GitHub repo + link to plugin/theme (requires `gh` CLI)
-- **When to use:** Publishing plugin to GitHub
-- **Key params:** `codename` (required), others optional
-- **Example:** `mybb_plugin_github_create(codename="my_plugin", repo_visibility="public", description="My awesome plugin")`
-- **Related:** `mybb_plugin_git_init`, `mybb_plugin_git_push`
+**`mybb_workspace_github_create(codename, type, visibility, repo_visibility, repo_name, description)`**
+- **Purpose:** Create GitHub repo + link to plugin/theme workspace (requires `gh` CLI)
+- **When to use:** Publishing workspace to GitHub
+- **Key params:** `codename` (required), `type` ("plugin"|"theme"), `repo_visibility` ("public"|"private")
+- **Plugin example:** `mybb_workspace_github_create(codename="my_plugin", visibility="private", repo_visibility="public")`
+- **Theme example:** `mybb_workspace_github_create(codename="my_theme", type="theme", repo_visibility="public")`
+- **Related:** `mybb_workspace_git_init`, `mybb_workspace_git_push`
 
-**`mybb_plugin_git_status(codename, type, visibility)`**
-- **Purpose:** Get git status for plugin/theme
-- **When to use:** Checking uncommitted changes
-- **Key params:** `codename` (required), `type` (optional), `visibility` (optional)
-- **Example:** `mybb_plugin_git_status(codename="my_plugin")`
-- **Related:** `mybb_plugin_git_commit`
+**`mybb_workspace_git_status(codename, type, visibility)`**
+- **Purpose:** Get git status for plugin/theme workspace
+- **When to use:** Checking uncommitted workspace changes
+- **Key params:** `codename` (required), `type` ("plugin"|"theme"), `visibility` (plugins only)
+- **Plugin example:** `mybb_workspace_git_status(codename="my_plugin")`
+- **Theme example:** `mybb_workspace_git_status(codename="my_theme", type="theme")`
+- **Related:** `mybb_workspace_git_commit`
 
-**`mybb_plugin_git_commit(codename, message, type, visibility, files)`**
-- **Purpose:** Commit changes in plugin/theme repo
-- **When to use:** Committing plugin changes
-- **Key params:** `codename` (required), `message` (required), `files=[]` (optional: specific files only)
-- **Example:** `mybb_plugin_git_commit(codename="my_plugin", message="feat: Add feature X")` or `mybb_plugin_git_commit(codename="my_plugin", message="fix: Bug Y", files=["my_plugin.php"])`
-- **Related:** `mybb_plugin_git_push`
+**`mybb_workspace_git_commit(codename, message, type, visibility, files)`**
+- **Purpose:** Commit changes in plugin/theme workspace repo
+- **When to use:** Committing workspace changes
+- **Key params:** `codename` (required), `message` (required), `type` ("plugin"|"theme"), `files=[]` (optional: specific files)
+- **Plugin example:** `mybb_workspace_git_commit(codename="my_plugin", message="feat: Add feature")`
+- **Theme example:** `mybb_workspace_git_commit(codename="my_theme", type="theme", message="Update styles")`
+- **Related:** `mybb_workspace_git_push`
 
-**`mybb_plugin_git_push(codename, type, visibility, set_upstream)`**
-- **Purpose:** Push commits to remote
-- **When to use:** Publishing commits
-- **Key params:** `codename` (required), `set_upstream=False`
-- **Example:** `mybb_plugin_git_push(codename="my_plugin", set_upstream=True)`
-- **Related:** `mybb_plugin_git_pull`
+**`mybb_workspace_git_push(codename, type, visibility, set_upstream)`**
+- **Purpose:** Push workspace commits to remote
+- **When to use:** Publishing workspace commits
+- **Key params:** `codename` (required), `type` ("plugin"|"theme"), `set_upstream=False`
+- **Plugin example:** `mybb_workspace_git_push(codename="my_plugin", set_upstream=True)`
+- **Theme example:** `mybb_workspace_git_push(codename="my_theme", type="theme")`
+- **Related:** `mybb_workspace_git_pull`
 
-**`mybb_plugin_git_pull(codename, type, visibility)`**
-- **Purpose:** Pull changes from remote
-- **When to use:** Syncing with remote repo
-- **Key params:** `codename` (required), others optional
-- **Example:** `mybb_plugin_git_pull(codename="my_plugin")`
-- **Related:** `mybb_plugin_git_push`
+**`mybb_workspace_git_pull(codename, type, visibility)`**
+- **Purpose:** Pull workspace changes from remote
+- **When to use:** Syncing workspace with remote repo
+- **Key params:** `codename` (required), `type` ("plugin"|"theme"), `visibility` (plugins only)
+- **Plugin example:** `mybb_workspace_git_pull(codename="my_plugin")`
+- **Theme example:** `mybb_workspace_git_pull(codename="my_theme", type="theme")`
+- **Related:** `mybb_workspace_git_push`
 
 ---
 
@@ -1082,11 +1092,11 @@ mybb_server_logs(errors_only=True, limit=20)
 mybb_plugin_uninstall("welcome_banner", remove_files=True)
 mybb_plugin_install("welcome_banner")
 
-# 8. VERSION CONTROL (optional)
-mybb_plugin_git_init(codename="welcome_banner", visibility="private")
-mybb_plugin_github_create(codename="welcome_banner", repo_visibility="public")
-mybb_plugin_git_commit(codename="welcome_banner", message="feat: Initial release")
-mybb_plugin_git_push(codename="welcome_banner", set_upstream=True)
+# 8. VERSION CONTROL (optional) - type defaults to "plugin"
+mybb_workspace_git_init(codename="welcome_banner", visibility="private")
+mybb_workspace_github_create(codename="welcome_banner", repo_visibility="public")
+mybb_workspace_git_commit(codename="welcome_banner", message="feat: Initial release")
+mybb_workspace_git_push(codename="welcome_banner", set_upstream=True)
 
 # 9. CLEANUP (if needed)
 mybb_plugin_uninstall("welcome_banner", uninstall=True, remove_files=True)

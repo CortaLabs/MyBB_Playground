@@ -1,6 +1,15 @@
 # CLAUDE.md - MyBB Playground
 
-## 🚨 CRITICAL DATABASE ACCESS RULE 🚨
+AI-assisted MyBB development toolkit providing MCP tools for Claude Code to interact with MyBB installations.
+
+## Critical Rules (MUST READ FIRST)
+
+**ATTENTION!!!!**
+EDIT THE MCP_BRIDGE FROM `install_files` AND COPY IT INTO THE TESTFORUM.
+
+NO AGENT SHOULD EVER EDIT ANYTHING INSIDE THE TESTFORUM.
+
+### Database Access Prohibition
 
 **ABSOLUTE PROHIBITION - NO EXCEPTIONS:**
 
@@ -35,333 +44,187 @@
 3. Wait for a new MCP tool to be created
 4. DO NOT improvise with direct DB access
 
-## 🎯 ORCHESTRATION PROTOCOL (MANDATORY)
-**DO NOT SKIP THIS CLAUDE, THIS IS HOW WE GET WORK DONE.**
-
-**You are the orchestrator. Your job is to coordinate subagents, not do all the work yourself.**
-
-### 1. Project-First Workflow
-
-**ALWAYS create or activate a Scribe project before starting work:**
-```python
-# New feature/fix
-mcp__scribe__set_project(name="feature-name", root="/home/austin/projects/MyBB_Playground", ...)
-
-# Existing project
-mcp__scribe__set_project(name="existing-project", root="/home/austin/projects/MyBB_Playground")
-```
-
-- Every non-trivial task needs a project for tracking
-- Pass the project name to ALL subagents in their prompts
-- Check `mcp__scribe__list_projects()` to find existing projects
-
-### 2. Delegate, Don't Browse
-
-**For complex exploration, spawn research agents - don't waste your context browsing files:**
-**We can swarm research**:  SEND MULTIPLE RESEARCHERS OUT FOR COMPLEX SCOPED RESEARCH TASKS. EACH WILL MAKE AN INDIVIDUAL REPORT.
-
-
-| Situation | Action |
-|-----------|--------|
-| Need to understand a system | Spawn `mybb-research-analyst` (haiku (or sonnet if approved)) |
-| Need to find where something is | Spawn `Explore` agent |
-| Trivial lookup (specific file/function) | Use Read/Grep yourself |
-| Multiple areas to investigate | Spawn **parallel research swarms** |
-
-**THIS IS IMPORTANT CLAUDE**
-
-**Research swarms:** When you need lots of context, spawn multiple research agents in parallel:
-```python
-# Parallel research - one message, multiple Task calls
-Task(subagent_type="mybb-research-analyst", model="haiku", prompt="Investigate area A...")
-Task(subagent_type="mybb-research-analyst", model="haiku", prompt="Investigate area B...")
-```
-Always give proper prompts to each agent, they need strict guidance.  Do **NOT** OVERLOAD A SINGLE SUBAGENT.  NO MASSIVE SCOPES FOR ONE SUBAGENT, INCLUDING (AND ESPECIALLY) CODERS.
-
-### 3. Scribe Protocol Flow
-
-**All significant work follows this flow:**
-
-```
-1. RESEARCH    → mybb-research-analyst (haiku) produces research report
-2. ARCHITECT   → mybb-architect (opus) produces ARCHITECTURE_GUIDE.md, PHASE_PLAN.md, CHECKLIST.md
-3. PRE-REVIEW  → mybb-review-agent (optional, for complex designs)
-4. IMPLEMENT   → mybb-coder (sonnet) executes task packages FROM THE CHECKLIST
-5. TEST/REVIEW → mybb-review-agent or manual testing
-```
-
-**You don't always follow it exactly**, but all significant tasks should have:
-- A project for tracking
-- A plan (even if informal)
-- Bounded task packages for coders
-- Verification at the end
-
-### 4. Task List Discipline
-
-**🚨 ALWAYS READ THE PHASE PLAN AND CHECKLIST BEFORE SENDING CODERS 🚨**
-
-You MUST actually read the task content, not just reference it:
-```python
-# Before implementation phase - ACTUALLY READ THESE:
-mcp__scribe__read_file(path=".scribe/docs/dev_plans/{project}/PHASE_PLAN.md", mode="line_range", start_line=X, end_line=Y)
-mcp__scribe__read_file(path=".scribe/docs/dev_plans/{project}/CHECKLIST.md", mode="line_range", start_line=X, end_line=Y)
-```
-
-Extract the specific task package specifications, then include them in the coder prompt.
-
-**Never send one coder to do everything.** Break work into bounded task packages:
-
-| Scope | Approach |
-|-------|----------|
-| 1-2 files, simple change | Single coder, single task |
-| Multiple related changes in same file | Single coder, multiple tasks |
-| Changes across different files (no deps) | **Parallel coders** |
-| Changes with dependencies | **Sequential coders** |
-
-### 5. Subagent Prompting
-
-**Every subagent prompt MUST include:**
-1. **Project name:** `Project: filewatcher-fix`
-2. **Root path:** `Root: /home/austin/projects/MyBB_Playground`
-3. **Clear scope:** What files, what changes, what NOT to touch
-4. **Verification criteria:** How to know the task is complete
-5. **Direct links to the phase plan:** Subagents are expected to understand the entire plan, and their place in it.
-
-**Example coder prompt:**
-```
-## Task: Simplify SyncEventHandler
-
-**Project:** filewatcher-fix
-**Root:** /home/austin/projects/MyBB_Playground
-**PHASE PLAN:** /home/austin/projects/MyBB_Playground/.scribe/docs/dev_plans/filewatcher-fix/PHASE_PLAN.md
-
-### Scope
-- File: `mybb_mcp/mybb_mcp/sync/watcher.py` (lines 22-348)
-- Remove `_queue_for_batch()` and `_flush_batch()` methods
-- Modify handlers to use `put_nowait()` directly
-
-### Out of Scope
-- DO NOT modify FileWatcher class (lines 350+)
-- DO NOT modify service.py
-
-### Verification
-- `grep "get_event_loop" watcher.py` returns nothing
-- All three change handlers updated
-```
-
-### 6. Orchestrator Logging
-
-**You must log decisions and progress:**
-
-```python
-mcp__scribe__append_entry(
-    agent="Orchestrator",
-    message="Decision: Using stop/start instead of pause/resume for watcher",
-    status="plan",
-    meta={"reasoning": {"why": "...", "what": "...", "how": "..."}}
-)
-```
-
-**Log when:**
-- User makes a decision in discussion
-- You choose between approaches
-- A phase completes
-- Something unexpected happens
-
-### 7. Context Conservation
-
-**Your context is precious. Conserve it:**
-- Delegate research to haiku agents (cheap, fast)
-- Don't read large files yourself - have agents summarize
-- Wait for agents to complete (don't poll with TaskOutput)
-- Use append_entry to pass context to downstream agents
-- Summarize agent results for the user, don't paste full output
-
----
-
-## Project Overview
-
-AI-assisted MyBB development toolkit providing MCP tools for Claude Code to interact with MyBB installations. The goal is to make MyBB plugin and theme development accessible through natural language.
-
-**Key Components:**
-- `mybb_mcp/` — Python MCP server exposing 100+ MyBB tools to Claude
-- `TestForum/` — Local MyBB 1.8.x installation for development
-- `mybb_sync/` — Template/stylesheet disk sync with live file watching
-- `plugin_manager/` — Plugin/theme workspace with deployment and PHP lifecycle execution
-
-**Codex CLI note:** Codex does not support subagents in this repo. In Codex, treat "agent roles" as phases you execute yourself and follow `AGENTS.md` for the single-agent protocol and enforcement gates.
-
-## Forbidden Operations
+### Destructive Operations
 
 **NEVER use destructive commands without explicit user confirmation:**
 - `rm -rf` is BANNED. Period.
-- `rm -r` requires explicit user approval before execution.
-- Any deletion of directories containing code requires user confirmation.
-- If something "needs to be deleted and recreated", ASK FIRST.
+- `rm -r` requires explicit user approval
+- Any directory deletion requires user confirmation
+- If "delete and recreate" needed - ASK FIRST
 
 **Before deleting anything:**
 1. State exactly what will be deleted
 2. Explain why deletion is necessary
 3. WAIT for user confirmation
-4. If there's any doubt, don't delete
+4. If any doubt, don't delete
 
-**Plugin Manager workflow is mandatory:**
-- Use `mybb_create_plugin` to create plugins - never create workspace files directly
-- Use `mybb_plugin_install` to deploy - never copy files to TestForum manually
-- Check if a plugin exists in the system BEFORE assuming it doesn't
-- The correct database is `.plugin_manager/projects.db` at repo root
+**Extraction means EXTRACTION:**
+When told to "extract" code from File A to File B:
+1. Copy the code to File B
+2. REMOVE the code from File A
+3. Wire up imports/references
+- End result: same total lines, just reorganized
 
-**Lifecycle standard (templates vs DB):**
-- Activate/Deactivate handles templates (add/remove) and runtime wiring
-- Install/Uninstall handles DB setup/teardown (settings/tables)
-- Use `mybb_plugin_deploy` for full reinstall cycles when needed
+### Core Orchestration Rules
 
-**When things go wrong:**
-- Don't try to "fix" by deleting and recreating
-- Investigate why the system doesn't recognize something
-- Read the docs (CLAUDE.md, wiki) before assuming infrastructure is broken
-- Ask the user before taking destructive action
+- **ALWAYS** create or activate a Scribe project before starting work
+- **DELEGATE** to subagents for complex tasks - don't browse files yourself
+- **NEVER** send single coder on large scope - use bounded task packages
+- **Subagents DO NOT commit** - orchestrator handles all commits at defined gates
 
-**Extraction means EXTRACTION, not duplication:**
-- When told to "extract" code from File A to File B, you MUST:
-  1. Copy the code to File B
-  2. REMOVE the code from File A
-  3. Wire up imports/references so File A uses File B
-- If you only copy without removing, you've created DUPLICATE CODE
-- Extraction is a refactoring operation - the end result should have the SAME total lines, just reorganized
-- Never tell the orchestrator extraction is "complete" if the source file still contains the extracted code
+### Infrastructure Primacy
 
-## Development Environment
+**NEVER create replacement files:**
+- No `*_v2`, `enhanced_*`, `*_new` files to avoid integration
+- Edit/extend/refactor existing components
+- If blocked, escalate with a plan - don't fork
 
-### Prerequisites
-- Python 3.10+
-- PHP 8.0+ (installed via `setup_dev_env.sh`)
-- MariaDB (installed via `setup_dev_env.sh`)
-- Claude Code with MCP support
+### Orchestrator Logging (SCRIBE MORE)
 
-### Quick Start
-```bash
-# First time setup
-./setup_dev_env.sh
+**You must log decisions and progress with `append_entry`.** This is not optional.
 
-# Start MyBB server (port 8022)
-./start_mybb.sh
+**Log after:**
+- User makes a decision in discussion
+- You choose between approaches
+- A subagent completes work
+- A phase completes
+- Something unexpected happens
+- Every 2-3 significant actions
 
-# MCP server is configured at local scope for this project
-# Restart Claude Code to load it
+**Minimum logging:**
+```python
+mcp__scribe__append_entry(
+    agent="Orchestrator",
+    message="<what happened>",
+    status="info",  # or success/warn/error/plan
+    meta={
+        "reasoning": {
+            "why": "<goal or decision point>",
+            "what": "<constraints or alternatives>",
+            "how": "<method or next steps>"
+        }
+    }
+)
 ```
 
-### Environment Variables
-All config is in `.env` at project root:
+**If you're not logging, you're doing it wrong.** The progress log is how we maintain context across sessions and audit our work. No excuses.
+
+All agents can and should use **scribe_mcp_read_recent** to read the latest entries to the progress log.
+
+## Quick Reference
+
+### Essential Commands
+
+| Action | Command |
+|--------|---------|
+| Start MyBB server | `./start_mybb.sh` |
+| Server status | `mybb_server_status()` |
+| Run tests | `pytest tests/` |
+| MCP connection check | `claude mcp get mybb` |
+
+### Key Directories
+
+| Directory | Purpose |
+|-----------|---------|
+| `TestForum/` | MyBB installation (DO NOT edit core files) |
+| `TestForum/inc/plugins/` | Installed plugins |
+| `plugin_manager/plugins/` | Plugin workspace (edit here) |
+| `plugin_manager/themes/` | Theme workspace |
+| `mybb_sync/template_sets/` | Template files (disk sync) |
+| `mybb_mcp/` | MCP server code |
+| `docs/wiki/` | Documentation |
+
+### Development Credentials
+
+- **URL:** http://localhost:8022
+- **Admin CP:** http://localhost:8022/admin/
+- **Username:** admin
+- **Password:** admin
+
+### Environment
+
+All config in `.env` at project root:
+- `MYBB_ROOT=/home/austin/projects/MyBB_Playground/TestForum`
+- `MYBB_URL=http://localhost:8022`
+
+### Workspace Sync (Fast Development Iteration)
+
+**Use `mybb_workspace_sync` for fast iteration during development:**
+
+```python
+# Quick sync after editing workspace files (NO reinstall)
+mybb_workspace_sync(codename="my_theme", type="theme")
+mybb_workspace_sync(codename="my_plugin", type="plugin")
+
+# Preview what would sync
+mybb_workspace_sync(codename="my_theme", type="theme", dry_run=True)
+
+# Full reinstall when DB/lifecycle changes needed
+mybb_workspace_sync(codename="my_theme", type="theme", full_pipeline=True)
 ```
-MYBB_DB_HOST=localhost
-MYBB_DB_NAME=mybb_dev
-MYBB_DB_USER=mybb_user
-MYBB_DB_PASS=<password>
-MYBB_DB_PREFIX=mybb_
-MYBB_ROOT=/home/austin/projects/MyBB_Playground/TestForum
-MYBB_URL=http://localhost:8022
-```
 
-### Configuration Files (MyBB Forge v2)
+| Mode | When to Use |
+|------|-------------|
+| **Incremental** (default) | CSS, template, PHP file edits - fast, no lifecycle |
+| **Full Pipeline** | Settings changes, new hooks, DB schema changes |
+| **Dry Run** | Preview file counts before syncing |
 
-**ForgeConfig System** provides developer metadata and project defaults:
+**Rule:** Use incremental sync for routine edits. Use `full_pipeline=True` only when you've changed plugin settings, added new hooks, or modified `_install()`/`_activate()` functions.
 
-**`.mybb-forge.yaml`** (checked into version control):
-```yaml
-developer:
-  name: "Your Name"
-  website: "https://yoursite.com"
-  email: "you@example.com"
+## Skills & Commands
 
-defaults:
-  compatibility: "18*"        # MyBB version compatibility
-  license: "MIT"              # Default license for new plugins
-  visibility: "public"        # public or private workspace
+Invoke skills with `/skillname` in Claude Code.
 
-subtrees:
-  plugin_manager/plugins/public/my_plugin:
-    remote: PRIVATE_PLUGINS_REMOTE  # References .mybb-forge.env
-    branch: main
+| Skill | Purpose | When to Use |
+|-------|---------|-------------|
+| `/mybb-dev` | MyBB development workflow | Starting any MyBB plugin/theme work - loads full MCP toolkit context |
+| `/migrate-plugin` | Import external plugins | **IMPORTANT:** Use when importing third-party plugins into Plugin Manager workspace |
 
-sync:
-  debounce_ms: 100            # File watcher debounce (default: 100)
-  batch_window_ms: 100        # Batch window for updates (default: 100)
-  enable_cache_refresh: true  # Template set caching (default: true)
-```
+**Migration workflow:**
+When importing an external plugin (from MyBB Mods site, GitHub, etc.):
+1. Run `/migrate-plugin`
+2. Follow the guided import process
+3. Plugin will be set up in workspace with proper `meta.json`
+4. Use `mybb_plugin_install()` to deploy
 
-**`.mybb-forge.env`** (gitignored, for private remotes):
-```bash
-PRIVATE_PLUGINS_REMOTE=git@github.com:yourname/private-plugins.git
-PRIVATE_THEMES_REMOTE=git@github.com:yourname/private-themes.git
-```
+## Architecture Overview
 
-**Usage:**
-- Developer info auto-populates `meta.json` for new plugins
-- Subtrees enable private plugin repositories via git subtree
-- Sync settings control file watcher behavior and caching
-- Use `MYBB_SYNC_DISABLE_CACHE=1` env var to disable template set caching during development
+### System Components
 
-## Architecture
+| Component | Purpose | Documentation |
+|-----------|---------|---------------|
+| MCP Server | 112 tools for MyBB interaction | [MCP Tools](docs/wiki/mcp_tools/index.md) |
+| Plugin Manager | Workspace, deployment, PHP lifecycle | [Plugin Manager](docs/wiki/plugin_manager/index.md) |
+| Disk Sync | Template/stylesheet file sync | [Disk Sync](docs/wiki/architecture/disk_sync.md) |
+| Scribe | Development tracking & audit | [Scribe Protocol](docs/wiki/workflows/scribe_protocol.md) |
 
-### MCP Server (`mybb_mcp/`)
+### MCP Server Structure
+
 ```
 mybb_mcp/mybb_mcp/
-├── server.py           # Orchestration layer (116 lines)
-├── tools_registry.py   # Tool definitions (102 tools)
-├── config.py           # Env/config loading
-├── handlers/           # Modular tool handlers (15 modules)
+├── server.py           # Orchestration (116 lines)
+├── tools_registry.py   # 112 tool definitions
+├── handlers/           # 15 handler modules
 │   ├── dispatcher.py   # Dictionary-based routing
-│   ├── templates.py    # 8 handlers
-│   ├── themes.py       # 5 handlers
-│   ├── plugins.py      # 15 handlers
-│   ├── content.py      # 16 handlers (forums/threads/posts)
-│   ├── users.py        # 6 handlers
-│   ├── moderation.py   # 8 handlers
-│   ├── search.py       # 4 handlers
-│   ├── admin.py        # 11 handlers
-│   ├── tasks.py        # 6 handlers
-│   ├── sync.py         # 5 handlers
-│   ├── languages.py    # 3 handlers (language validation)
-│   └── database.py     # 1 handler
-├── db/connection.py    # MySQL wrapper with MyBB-specific methods
-└── tools/plugins.py    # Plugin scaffolding + hooks reference
+│   ├── templates.py    # Template operations
+│   ├── themes.py       # Theme operations
+│   ├── plugins.py      # Plugin lifecycle
+│   └── ...
+└── db/connection.py    # Database wrapper
 ```
 
-**Tool Categories (102 tools):**
-- Templates (9): list, read, write, batch operations, find/replace, outdated detection
-- Themes/Stylesheets (6): list, read, write, create themes
-- Plugins (15): CRUD, hooks discovery, lifecycle management (install/uninstall with PHP execution)
-- Forums/Threads/Posts (17): full content management
-- Users/Moderation (14): user management, mod actions, mod logging
-- Search (4): posts, threads, users, advanced combined search
-- Admin/Settings (11): settings, cache, statistics
-- Tasks (6): scheduled task management
-- Language Validation (3): validate, generate stubs, scan usage
-- Disk Sync (5): export, import, watcher control
-- Server Orchestration (5): start, stop, status, logs, restart PHP dev server
+### Template Inheritance
 
-See [MCP Tools Reference](docs/wiki/mcp_tools/index.md) for complete documentation.
-
-### MyBB Template Inheritance
 ```
 sid = -2  → Master templates (base, never delete)
 sid = -1  → Global templates (shared)
-sid >= 1  → Template set overrides (custom versions)
+sid >= 1  → Template set overrides (custom)
 ```
 
-When writing templates, always check for master first. Custom templates override master.
-
-### Disk Sync System
-Templates and stylesheets sync between disk and database:
-- **Location:** `mybb_sync/template_sets/` and `mybb_sync/themes/`
-- **Export:** `mybb_sync_export_templates("Default Templates")` or `mybb_sync_export_stylesheets("Default")`
-- **Watcher:** `mybb_sync_start_watcher()` monitors disk changes → syncs to DB
-- **Workflow:** Edit files on disk, watcher auto-syncs — this is the primary development workflow
-
-See [Disk Sync Architecture](docs/wiki/architecture/disk_sync.md) for implementation details.
+Custom templates override master. Always check for master first when writing.
 
 ### Server Orchestration
+
 MCP tools for managing the PHP development server:
 
 ```python
@@ -398,6 +261,7 @@ mybb_server_logs(offset=50, limit=50)        # Pagination (page 2)
 **Log file:** `logs/server.log` (gitignored, rotates on server start)
 
 ### Browser Testing (Chrome DevTools MCP)
+
 Use Chrome DevTools MCP tools to test MyBB in a real browser:
 
 **Dev Credentials:**
@@ -445,321 +309,85 @@ mcp__chrome-devtools__list_console_messages()
 - The MCP runs with `--isolated` flag to avoid profile conflicts
 - Admin is pre-logged-in during development
 
-## Critical Rules
+## Task Routing
 
-### DO NOT Edit Core MyBB Files
-**Never modify files in `TestForum/` that are part of core MyBB.** All MyBB customization must be done through:
-- Plugins (`TestForum/inc/plugins/`)
-- Templates (via MCP tools or Admin CP)
-- Stylesheets (via MCP tools or Admin CP)
-- Language files (`TestForum/inc/languages/*/`)
+When working on specific tasks, read the appropriate documentation:
 
-Core files will be overwritten on MyBB upgrades. Hooks and plugins are the correct extension mechanism.
+| Task Type | Primary Doc | What You'll Find |
+|-----------|-------------|------------------|
+| **Plugin development** | [Plugin Development](docs/wiki/best_practices/plugin_development.md) | Lifecycle, hooks, settings, templates |
+| **Theme development** | [Theme Development](docs/wiki/best_practices/theme_development.md) | Disk sync, stylesheets, `set_default: true` |
+| **Complex features** | [Scribe Protocol](docs/wiki/workflows/scribe_protocol.md) | Research → Architect → Code → Review |
+| **MCP tool usage** | [MCP Tools Index](docs/wiki/mcp_tools/index.md) | 112 tools with parameters |
+| **Getting started** | [Installation](docs/wiki/getting_started/installation.md) | Setup, prerequisites |
 
-### MyBB Development Workflow
+### Quick Decision Guide
 
-**Template & Stylesheet Editing:**
-- ALWAYS edit via disk sync — edit files in `mybb_sync/`, the watcher syncs to DB automatically
-- Export first if templates don't exist on disk: `mybb_sync_export_templates("Default Templates")`
-- Never use `mybb_write_template` directly during development — disk sync is the workflow
-- Stylesheets work the same way: edit on disk, watcher syncs
+- **Simple bug fix:** Implement directly with Scribe logging
+- **New feature:** Follow Scribe PROTOCOL workflow
+- **Plugin work:** Use Plugin Manager workflow (never create files directly)
+- **Theme work:** Use disk sync workflow (edit files, watcher syncs)
+- **Template changes:** Always via disk sync, never `mybb_write_template`
 
-**Plugin Development:**
-- Develop plugins in workspace: `plugin_manager/plugins/public/` or `private/`
-- Use `mybb_plugin_install(codename)` to deploy — this runs actual PHP lifecycle (_install, _activate)
-- Don't manually copy files to TestForum — the installer handles file deployment and tracking
-- Each plugin has `meta.json` for metadata — see [Plugin Manager docs](docs/wiki/plugin_manager/workspace.md)
-- **Plugin Templates (v2 Disk-First Sync):**
-  - Create templates in workspace: `templates/{template_name}.html` (syncs to sid=-2, master templates)
-  - For theme-specific overrides: `templates_themes/{Theme Name}/{template_name}.html`
-  - Template naming: `{codename}_{template_name}` (e.g., `myplugin_welcome.html`)
-  - File watcher auto-syncs changes to database when editing on disk
-  - Templates are deployed during `mybb_plugin_install()` along with PHP files
+## Orchestration Protocol
 
-**CRITICAL: Updating Plugin Templates/Files:**
-- `mybb_plugin_install()` alone does NOT update templates that already exist in the database
-- To deploy template changes, you MUST do a full uninstall/reinstall cycle:
-  ```python
-  mybb_plugin_uninstall(codename, remove_files=True)  # Remove files from TestForum
-  mybb_plugin_install(codename)                        # Redeploy everything fresh
-  ```
-- This ensures templates, language files, and PHP files are all synced from workspace to TestForum
-- NEVER use `mybb_write_template`, `mybb_template_find_replace`, or other direct template MCP tools during plugin development — always edit workspace files and reinstall
+You are the orchestrator. Your job is to coordinate subagents, not do all the work yourself.
 
-**Plugin Language Files:**
-- Language files live in workspace: `inc/languages/english/{codename}.lang.php` (frontend) and `inc/languages/english/admin/{codename}.lang.php` (admin)
-- Format: `$l['key'] = 'Value';` — accessed via `$lang->key` in PHP or `{$lang->key}` in templates
-- ALWAYS maintain language files alongside code changes — if you add `$lang->new_key` usage, add the definition
-- Use `mybb_lang_validate(codename)` to check for missing/unused definitions
-- Use `mybb_lang_generate_stub(codename)` to generate placeholder definitions for missing keys
-- Run validation before committing to catch language issues early
+### Project-First Workflow
 
-**Theme Development:**
-- Themes live in workspace: `plugin_manager/themes/`
-- Stylesheets use copy-on-write inheritance from parent themes
-- Use disk sync for editing, not direct DB writes
-- See [Theme Development guide](docs/wiki/best_practices/theme_development.md)
-
-**Git Hygiene for Private Plugins/Themes:**
-
-Private plugins and themes use **nested git repositories** — each has its own independent git repo.
-
-```
-plugin_manager/
-├── plugins/
-│   ├── public/           # Tracked in parent repo (default plugins like cortex, dice_roller)
-│   └── private/          # Gitignored - each plugin is its own nested repo
-│       └── my_plugin/
-│           └── .git/     # Independent git repo
-└── themes/               # Gitignored - nested repos
-```
-
-**MCP Git Tools (for plugin/theme repos):**
-```python
-mybb_plugin_git_init(codename, visibility="private")      # Initialize git
-mybb_plugin_github_create(codename, visibility, repo_visibility)  # Create GitHub repo
-mybb_plugin_git_status(codename, visibility)              # Check status
-mybb_plugin_git_commit(codename, visibility, message)     # Commit all changes
-mybb_plugin_git_commit(codename, visibility, message, files=[...])  # Commit specific files
-mybb_plugin_git_push(codename, visibility)                # Push to remote
-mybb_plugin_git_pull(codename, visibility)                # Pull from remote
-```
-
-### Orchestrator Commit Discipline
-
-**Subagents DO NOT commit.** The orchestrator handles all commits at defined gates.
-
-| Gate | What to Commit | Where | How |
-|------|---------------|-------|-----|
-| After Research | Scribe research docs | Parent repo | CLI `git commit` |
-| After Architecture | Scribe architecture docs | Parent repo | CLI `git commit` |
-| After Code Phase | Plugin code changes | Plugin repo | MCP `mybb_plugin_git_commit` |
-| After Review Approval | Final cleanup | Both if needed | CLI + MCP |
-
-**Why orchestrator commits, not agents:**
-- Scribe docs (`.scribe/`) are in the parent repo, not plugin workspaces
-- Multiple agents (swarms) would commit each other's work
-- Orchestrator has full visibility to make atomic, meaningful commits
-
-**Parent repo (MyBB Playground):** CLI `git commit` for:
-- Scribe docs (research, architecture, reviews)
-- MCP server code
-- Install scripts, wiki, default plugins
-
-**Plugin/theme repos:** MCP `mybb_plugin_git_commit` for:
-- Plugin PHP code
-- Templates, stylesheets
-- Language files
-
-**Optional `files` parameter:** When committing plugin repos, use `files=[...]` to commit only specific files. Useful if orchestrator needs to commit partial work or avoid committing unrelated changes.
-
-GitHub repos use prefix from `.mybb-forge.yaml` (e.g., `mybb_playground_my_plugin`).
-
-**MyBB Context:**
-- MyBB is 15+ year old PHP forum software with a mature but dated architecture
-- Work within MyBB's hook/template system — don't try to modernize MyBB itself
-- We're building tooling to make MyBB development easier and AI-accessible
-- Set realistic expectations — some things are limited by MyBB's design
-
-### Wiki Maintenance
-
-**Mandatory documentation updates:**
-- Any code change affecting documented behavior MUST update relevant wiki pages
-- New features MUST have wiki documentation upon completion
-- Wiki accuracy is not optional — outdated docs are worse than no docs
-
-**What requires wiki updates:**
-- New MCP tools → add to `docs/wiki/mcp_tools/` appropriate category
-- Changed tool parameters/behavior → update tool documentation
-- New Plugin Manager features → update `docs/wiki/plugin_manager/`
-- Architecture changes → update `docs/wiki/architecture/`
-
-### Development Standards
-
-**Don't freestyle — follow the system:**
-- Use Scribe PROTOCOL for non-trivial features (research → architect → review → code → review)
-- Read existing wiki/research docs before implementing
-- Check if an MCP tool exists before writing raw queries or file operations
-- Understand the existing patterns before adding new ones
-
-**MCP tools exist for a reason:**
-- Templates: use disk sync or MCP tools, not raw DB queries
-- Plugins: use Plugin Manager workflow, not manual file copying
-- Settings/cache: use MCP tools for proper cache invalidation
-- Database: `mybb_db_query` is read-only by design — writes go through specialized tools
-
-## Coding Conventions
-
-### Python (MCP Server)
-- Python 3.10+ with type hints
-- Use `pathlib.Path` for all file operations
-- Database queries use parameterized statements (never string interpolation)
-- All tools return formatted markdown strings
-- Errors are caught and returned as user-friendly messages
-
-### PHP (Plugins)
-- Follow MyBB plugin structure: `{codename}_info()`, `_activate()`, `_deactivate()`, `_install()`, `_uninstall()`, `_is_installed()`
-- Use `$db->escape_string()` for user input
-- Prefix all functions/variables with plugin codename
-- Templates use `{$variable}` syntax
-
-### File Naming
-- Python: `snake_case.py`
-- PHP plugins: `codename.php` (lowercase, underscores)
-- Templates: `template_name.html` (matches DB title)
-- Stylesheets: `name.css` (matches DB name)
-
-  ### Concurrent Scribe Agent Session Collision
-
-  **MCP Transport Limitation:** Session identity is `{repo_root}:{transport}:{agent_name}`. When multiple agents with the
-  **same name** work on **different Scribe projects** within the **same repository** concurrently, their sessions collide.
-
-  **Best Practice:** Use scoped agent names for concurrent work:
-  ```python
-  # ❌ Same name = collision
-  agent="CoderAgent"  # on project_x
-  agent="CoderAgent"  # on project_y → logs may go to wrong project!
-
-  # ✅ Scoped names = safe
-  agent="CoderAgent-ProjectX"
-  agent="CoderAgent-ProjectY"
-
-  Not affected: Sequential dispatches, different repositories, or single agent switching projects.
-
-  See docs/Scribe_Usage.md#concurrent-agent-naming-session-isolation for details.
-
-## Scribe Orchestration Protocol
-
-This project uses Scribe for structured development tracking. **Multiple Scribe projects may exist within this repo** — each major feature or component can have its own project.
-
-### 🚨 Scribe Commandments (Non-Negotiable)
-
-These rules are MANDATORY for all agents. Violations = rejection.
-
-#### #0 — Always Rehydrate From Progress Log First
-- **Before ANY work:** Call `read_recent(n=5)` minimum, `query_entries` for targeted history
-- **Why:** Progress log is source of truth. Skipping it causes hallucinated priorities and broken invariants
-- **Sentinel mode (no project):** `read_recent`/`query_entries` operate on global scope — don't target a project path
-
-#### #0.5 — Infrastructure Primacy (No Replacement Files)
-- **Rule:** Work within existing system. NEVER create `enhanced_*`, `*_v2`, `*_new` files to avoid integration
-- **Why:** Replacement files create tech debt, split code paths, destroy reliability
-- **Comply:** Edit/extend/refactor existing components. If blocked, escalate with a plan — don't fork
-
-#### #1 — Always Scribe (Log Everything Significant)
-- **Rule:** Use `append_entry` for EVERY significant action: investigations, decisions, code changes, test results, bugs, plan updates
-- **If not Scribed, it didn't happen** — this is your audit trail
-- **Orchestrators:** Always pass `project_name` to subagents so they log to the correct project
-
-#### #2 — Reasoning Traces Required
-- **Every `append_entry` MUST include `reasoning` block:**
-  - `why`: goal / decision point
-  - `what`: constraints / alternatives considered
-  - `how`: method / steps / remaining uncertainty
-- **Why:** Creates auditable decision record, prevents shallow "looks good" work
-- **Review enforcement:** Missing why/what/how = reject
-
-#### #3 — MCP Tool Usage Policy
-- **If a tool exists, CALL IT DIRECTLY** — no manual scripting or substitutes
-- **Log intent AFTER** the tool call succeeds or fails
-- **Confirmation flags** (`confirm`, `dry_run`) must be actual tool parameters
-- **File reads:** Use `read_file` (scan_only allowed) — no manual/implicit reads
-- **Why:** Tool calls are the auditable execution layer. Simulating tools = untrusted output
-
-#### #4 — Structure, Cleanliness, Tests
-- **Follow repo structure:** Tests in `/tests` using existing layout
-- **Don't clutter:** No random files, mirror existing patterns
-- **When in doubt:** Search existing code first
-
-### Repository Root
-**Always pass repo root to Scribe tools:**
-```
-root: /home/austin/projects/MyBB_Playground
-```
-
-### Session Startup (Required)
-
-Every session must follow this workflow:
+**ALWAYS create or activate a Scribe project before starting work:**
 
 ```python
-# 1. Activate project
-set_project(name="<project_name>", root="/home/austin/projects/MyBB_Playground")
+# New feature/fix
+mcp__scribe__set_project(name="feature-name", root="/home/austin/projects/MyBB_Playground", ...)
 
-# 2. Rehydrate context
-read_recent(n=5)
-
-# 3. Log session start (REQUIRED)
-append_entry(
-    message="Starting <task>",
-    status="info",
-    agent="Claude",
-    meta={
-        "task": "<task>",
-        "reasoning": {"why": "...", "what": "...", "how": "..."}
-    }
-)
+# Existing project
+mcp__scribe__set_project(name="existing-project", root="/home/austin/projects/MyBB_Playground")
 ```
 
-### Active Projects
-Projects are created per-feature/component:
-- `mybb-playground` — Overall project coordination
-- `disk-sync` — Template/stylesheet disk sync feature (planned)
-- `plugin-builder` — Enhanced plugin scaffolding (planned)
+- Every non-trivial task needs a project for tracking
+- Pass the project name to ALL subagents in their prompts
+- Check `mcp__scribe__list_projects()` to find existing projects
 
-Use `mcp__scribe__list_projects(root="/home/austin/projects/MyBB_Playground")` to see all projects in this repo.
+### Delegate, Don't Browse
 
-### Development Protocol (REQUIRED)
+**For complex exploration, spawn research agents - don't waste your context browsing files:**
 
-**Full Specification:** `.scribe/docs/dev_plans/mybb_dev_protocol/PROTOCOL_SPEC.md`
+| Situation | Action |
+|-----------|--------|
+| Need to understand a system | Spawn `mybb-research-analyst` (haiku) |
+| Need to find where something is | Spawn `Explore` agent |
+| Trivial lookup (specific file/function) | Use Read/Grep yourself |
+| Multiple areas to investigate | Spawn **parallel research swarms** |
 
-All non-trivial development follows this 6-phase workflow:
-
+**Research swarms:** When you need lots of context, spawn multiple research agents in parallel:
+```python
+# Parallel research - one message, multiple Task calls
+Task(subagent_type="mybb-research-analyst", model="haiku", prompt="Investigate area A...")
+Task(subagent_type="mybb-research-analyst", model="haiku", prompt="Investigate area B...")
 ```
-SPEC → Research → Architect → Code → Review → Documentation
-```
 
-| Phase | Agent | Purpose |
-|-------|-------|---------|
-| **SPEC** | User + Orchestrator | Define what we're building, create Scribe project |
-| **Research** | `mybb-research-analyst` (haiku) | Gather context, verify against code |
-| **Architect** | `mybb-architect` (opus) | Create ARCHITECTURE_GUIDE.md, PHASE_PLAN.md, CHECKLIST.md |
-| **Code** | `mybb-coder` (sonnet) | Execute bounded task packages |
-| **Review** | `mybb-review-agent` (sonnet) | Validate against plan (≥93% to pass) |
-| **Documentation** | Coder/Orchestrator | Fill README, update wiki, no TODOs at release |
+### Agent Decision Matrix
 
-**Critical Rules:**
-- **Sequential coders** if tasks touch same files; **concurrent** if different files
-- **No hacky workarounds** — work within MyBB's systems
-- **Documentation is mandatory** — README must have all sections filled
-- **Plugin Manager workflow required** — never create files manually
-
-### Scribe Subagent Workflow (PROTOCOL)
-
-For non-trivial features, follow the 6-step PROTOCOL workflow using specialized subagents:
-
-| Step | Agent | Model | Purpose |
-|------|-------|-------|---------|
-| 1 | `scribe-research-analyst` | **haiku** or sonnet | Deep codebase investigation, gather context, produce RESEARCH_*.md |
-| 2 | `scribe-architect` | **opus** | Transform research into architecture docs, phase plans, checklists |
-| 3 | `scribe-review-agent` | **sonnet** or opus | Pre-implementation review, verify feasibility (≥93% standard) |
-| 4 | `scribe-coder` | **sonnet** or opus | Implement according to plan, log all progress |
-| 5 | `scribe-review-agent` | **sonnet** or opus | Post-implementation review, validate, grade agents |
-
-**Model Selection Rules:**
-- **Research** → haiku (cheap, fast, good for pattern discovery and context gathering)
-- **Architect** → opus (critical decisions require strongest reasoning)
-- **Coder** → sonnet or opus (implementation quality matters)
-- **Review** → sonnet or opus (needs to catch issues architect/coder missed)
+| Situation | Agent | Model | Notes |
+|-----------|-------|-------|-------|
+| Understand existing code | `mybb-research-analyst` | haiku | Fast, cheap context gathering |
+| Design architecture | `mybb-architect` | opus | Critical decisions need strong reasoning |
+| Pre/post-implementation review | `mybb-review-agent` | sonnet | Catches issues others miss |
+| Implement bounded task | `mybb-coder` | sonnet | Quality implementation |
+| Debug plugin/template issues | `mybb-bug-hunter` | sonnet | Autonomous debugging |
+| Deep plugin guidance | `mybb-plugin-specialist` | sonnet | Consulting on hooks, lifecycle |
+| Deep template guidance | `mybb-template-specialist` | sonnet | Consulting on Cortex, inheritance |
 
 ### MyBB-Specialized Agents (PREFERRED)
 
 For all MyBB development work, **prefer these specialized agents over the generic Scribe agents**. They have MyBB-specific knowledge baked in and know the Plugin Manager/disk sync workflows.
 
-#### PROTOCOL Workflow Agents (MyBB-Specialized)
+#### PROTOCOL Workflow Agents
 
 | Step | Agent | Purpose | When to Use |
 |------|-------|---------|-------------|
-| 1 | `mybb-research-analyst` | Investigate MyBB internals using 94+ MCP tools | Analyzing plugins, hooks, templates before development |
+| 1 | `mybb-research-analyst` | Investigate MyBB internals using 112+ MCP tools | Analyzing plugins, hooks, templates before development |
 | 2 | `mybb-architect` | Design plugins/templates/themes | Creating architecture for new MyBB features |
 | 3 | `mybb-review-agent` | Review MyBB work for workflow compliance | Pre/post-implementation reviews |
 | 4 | `mybb-coder` | Implement plugins/templates | Writing PHP, editing templates via disk sync |
@@ -770,8 +398,8 @@ For all MyBB development work, **prefer these specialized agents over the generi
 
 | Agent | Expertise | When to Use |
 |-------|-----------|-------------|
-| `mybb-plugin-specialist` | Plugin lifecycle, hooks, settings, security patterns | Complex plugin architecture decisions, hook selection, debugging lifecycle issues |
-| `mybb-template-specialist` | Template inheritance, Cortex syntax, disk sync, find_replace patterns | Template modification strategy, Cortex debugging, theme development |
+| `mybb-plugin-specialist` | Plugin lifecycle, hooks, settings, security patterns | Complex plugin architecture, hook selection, lifecycle debugging |
+| `mybb-template-specialist` | Template inheritance, Cortex syntax, disk sync, find_replace | Template modification strategy, Cortex debugging, theme development |
 
 #### MyBB vs Generic Scribe Agents
 
@@ -782,9 +410,9 @@ For all MyBB development work, **prefer these specialized agents over the generi
 | Debugging plugin/template issues | General codebase exploration |
 | Need MyBB-specific hook/API knowledge | Language-agnostic research |
 
-#### Multi-Coder Workflow (CRITICAL)
+### Multi-Coder Workflow
 
-**NEVER send a single coder on a large scope.** Break work into bounded task packages and spawn multiple coders:
+**NEVER send a single coder on a large scope.** Break work into bounded task packages:
 
 | Scope Size | Approach |
 |------------|----------|
@@ -796,22 +424,62 @@ For all MyBB development work, **prefer these specialized agents over the generi
 **Coder Scoping Rules:**
 - Each coder gets ONE bounded task package from PHASE_PLAN.md
 - Task package specifies exact files, line ranges, and verification criteria
-- **Concurrent coders CANNOT have overlapping file scopes** - if two tasks touch the same file, they must be sequential
-- Orchestrator waits for each coder to complete before spawning coders that touch the same files
+- **Concurrent coders CANNOT have overlapping file scopes**
+- Orchestrator waits for completion before spawning coders that touch same files
 
-**Parallel vs Sequential:**
+### Subagent Prompting
+
+**Every subagent prompt MUST include:**
+1. **Project name:** `Project: feature-name`
+2. **Root path:** `Root: /home/austin/projects/MyBB_Playground`
+3. **Clear scope:** What files, what changes, what NOT to touch
+4. **Verification criteria:** How to know the task is complete
+5. **Link to phase plan:** Subagents need the full context
+
+### Commit Discipline
+
+**Subagents DO NOT commit.** The orchestrator handles all commits at defined gates:
+
+| Gate | What to Commit | Where | How |
+|------|---------------|-------|-----|
+| After Research | Scribe research docs | Parent repo | CLI `git commit` |
+| After Architecture | Scribe architecture docs | Parent repo | CLI `git commit` |
+| After Code Phase | Plugin code changes | Plugin repo | MCP `mybb_workspace_git_commit` |
+| After Review | Final cleanup | Both if needed | CLI + MCP |
+
+**Why orchestrator commits, not agents:**
+- Scribe docs are in parent repo, not plugin workspaces
+- Multiple agents would commit each other's work
+- Orchestrator has full visibility for atomic, meaningful commits
+
+### Using Haiku Swarms for Research
+
+For context gathering, use **haiku model** with research agents:
+
+```python
+Task(
+    subagent_type="mybb-research-analyst",
+    model="haiku",  # Fast, cheap for research swarms
+    prompt="""
+    Investigate how the VSCode extension handles template sync.
+    Repo root: /home/austin/projects/MyBB_Playground
+    Focus on: vscode-mybbbridge/src/*.ts
+    """
+)
 ```
-Different files, no dependencies → CAN be parallel
-Same files touched            → MUST be sequential
-Logical dependencies          → MUST be sequential (usually)
-```
 
-**Before spawning parallel coders, verify:**
-1. No file overlap between task packages
-2. No logical dependencies (one task's output needed by another)
-3. Each coder has complete context for their isolated scope
+**When to use haiku swarms:**
+- Initial codebase exploration
+- Gathering context from multiple files
+- Pattern discovery across the codebase
+- Producing research reports
 
-**Example: Using MyBB Agents**
+**When to use stronger models:**
+- Architecture decisions (opus)
+- Code implementation (sonnet/opus)
+- Complex reasoning tasks
+
+### Example: Multi-Phase Coder Workflow
 
 ```python
 # Research phase - use mybb-research-analyst
@@ -853,248 +521,397 @@ Task(
 )
 ```
 
-### Using Haiku Swarms for Research
+## Scribe Commandments (Non-Negotiable)
 
-For context gathering, use **haiku model** with the Explore agent or research-analyst:
+These rules are MANDATORY for all agents. Violations = rejection.
+
+### #0 — Always Rehydrate From Progress Log First
+- **Before ANY work:** Call `read_recent(n=5)` minimum, `query_entries` for targeted history
+- **Why:** Progress log is source of truth. Skipping it causes hallucinated priorities and broken invariants
+- **Sentinel mode (no project):** `read_recent`/`query_entries` operate on global scope
+
+### #0.5 — Infrastructure Primacy (No Replacement Files)
+- **Rule:** Work within existing system. NEVER create `enhanced_*`, `*_v2`, `*_new` files
+- **Why:** Replacement files create tech debt, split code paths, destroy reliability
+- **Comply:** Edit/extend/refactor existing components. If blocked, escalate with a plan
+
+### #1 — Always Scribe (Log Everything Significant)
+- **Rule:** Use `append_entry` for EVERY significant action
+- **If not Scribed, it didn't happen** — this is your audit trail
+- **Orchestrators:** Always pass `project_name` to subagents
+
+### #2 — Reasoning Traces Required
+- **Every `append_entry` MUST include `reasoning` block:**
+  - `why`: goal / decision point
+  - `what`: constraints / alternatives considered
+  - `how`: method / steps / remaining uncertainty
+- **Review enforcement:** Missing why/what/how = reject
+
+### #3 — MCP Tool Usage Policy
+- **If a tool exists, CALL IT DIRECTLY** — no manual scripting or substitutes
+- **Log intent AFTER** the tool call succeeds or fails
+- **File reads:** Use `read_file` — no manual/implicit reads
+- **Why:** Tool calls are the auditable execution layer
+
+### #4 — Structure, Cleanliness, Tests
+- **Follow repo structure:** Tests in `/tests` using existing layout
+- **Don't clutter:** No random files, mirror existing patterns
+- **When in doubt:** Search existing code first
+
+### Session Startup (Required)
+
+Every session must follow this workflow:
 
 ```python
-Task(
-    subagent_type="scribe-research-analyst",
-    model="haiku",  # Fast, cheap for research swarms
-    prompt="""
-    Investigate how the VSCode extension handles template sync.
-    Repo root: /home/austin/projects/MyBB_Playground
-    Focus on: vscode-mybbbridge/src/*.ts
-    """
-)
-```
+# 1. Activate project
+set_project(name="<project_name>", root="/home/austin/projects/MyBB_Playground")
 
-**When to use haiku swarms:**
-- Initial codebase exploration
-- Gathering context from multiple files
-- Pattern discovery across the codebase
-- Producing research reports
+# 2. Rehydrate context
+read_recent(n=5)
 
-**When to use stronger models:**
-- Architecture decisions
-- Code implementation
-- Complex reasoning
-
-### Logging Guidelines
-
-**Reasoning blocks are REQUIRED** in every append_entry:
-
-```python
+# 3. Log session start (REQUIRED)
 append_entry(
-    message="Completed file watcher implementation",
-    status="success",
+    message="Starting <task>",
+    status="info",
     agent="Claude",
     meta={
-        "task": "disk-sync",
-        "reasoning": {
-            "why": "Need to sync templates from disk to DB on change",
-            "what": "Implemented watchdog-based file observer",
-            "how": "Used watchdog library with debouncing for batch updates"
-        }
+        "task": "<task>",
+        "reasoning": {"why": "...", "what": "...", "how": "..."}
     }
 )
 ```
 
-**Log frequency:** After each meaningful step (every 2-3 edits or ~5 minutes), and after:
-- Investigations and discoveries
-- Decisions made
-- Tests run
-- Errors encountered
-- Task completions
+### Development Protocol (REQUIRED)
 
-### Status Types
-- `info` — General progress notes
-- `success` — Completed tasks/milestones
-- `warn` — Concerns, potential issues
-- `error` — Failed operations
-- `bug` — Bug tracking
-- `plan` — Planning decisions
+All non-trivial development follows this 6-phase workflow:
 
-### File Operations
-
-**Use `read_file` for file reads** (not shell reads like cat/head/tail):
-```python
-mcp__scribe__read_file(
-    path="mybb_mcp/server.py",
-    mode="scan_only"  # or "chunk", "search", "line_range"
-)
+```
+SPEC → Research → Architect → Code → Review → Documentation
 ```
 
-**Use `manage_docs` for managed docs** in `.scribe/docs/dev_plans/<project>/`:
+| Phase | Agent | Purpose |
+|-------|-------|---------|
+| **SPEC** | User + Orchestrator | Define what we're building, create Scribe project |
+| **Research** | `mybb-research-analyst` (haiku) | Gather context, verify against code |
+| **Architect** | `mybb-architect` (opus) | Create ARCHITECTURE_GUIDE.md, PHASE_PLAN.md, CHECKLIST.md |
+| **Code** | `mybb-coder` (sonnet) | Execute bounded task packages |
+| **Review** | `mybb-review-agent` (sonnet) | Validate against plan (≥93% to pass) |
+| **Documentation** | Coder/Orchestrator | Fill README, update wiki, no TODOs at release |
+
+**Critical Rules:**
+- **Sequential coders** if tasks touch same files; **concurrent** if different files
+- **No hacky workarounds** — work within MyBB's systems
+- **Documentation is mandatory** — README must have all sections filled
+- **Plugin Manager workflow required** — never create files manually
+- **Work in the WORKSPACE**  — never editing files within TestForum, or using MCP to edit templates/stylesheets attached to plugins or themes.
+
+For full details, see [Scribe Protocol](docs/wiki/workflows/scribe_protocol.md).
+
+## MCP Tools & Gotchas
+
+112 tools across 15 categories. Full documentation: [MCP Tools Index](docs/wiki/mcp_tools/index.md)
+
+This section covers **CRITICAL gotchas** not in wiki documentation.
+
+### Anti-Pattern: MCP Tools Are Not Importable
+
+**MCP tools are NOT Python module functions. They are handlers dispatched through the MCP server.**
+
 ```python
-manage_docs(
-    action="replace_section",
-    doc_name="architecture",
-    section="problem_statement",
-    content="Updated content..."
-)
+# WRONG - causes AttributeError
+import mybb_mcp
+result = mybb_mcp.mybb_list_stylesheets(tid=tid)
+
+# WRONG - module has no such attribute
+from mybb_mcp.handlers.templates import handle_template_batch_write
+result = handle_template_batch_write(...)
+
+# CORRECT - use database methods via dependency injection
+result = self.mybb_db.list_stylesheets(tid=tid)
+
+# CORRECT - for MCP tool calls, use the MCP interface
+mcp__mybb__mybb_list_stylesheets(tid=tid)
 ```
 
-### Creating a New Feature Project
+Non-handler code (like installer.py) must use `MyBBDatabase` methods directly, not MCP tool functions.
 
-Before starting a new feature:
+### Plugin Lifecycle Gotchas
 
+**Lifecycle distinction:**
+- `_install()` / `_uninstall()` - Database setup/teardown (settings, tables)
+- `_activate()` / `_deactivate()` - Templates and runtime wiring
+
+**Template update gotcha:**
+`mybb_plugin_install()` alone does NOT update templates that already exist in the database.
+
+For template changes, do a full reinstall cycle:
 ```python
-# 1. Create the project
-set_project(
-    name="feature-name",
-    description="What this feature does",
-    root="/home/austin/projects/MyBB_Playground",
-    tags=["mybb", "relevant", "tags"]
-)
-
-# 2. Log the start
-append_entry(
-    message="Starting feature-name project",
-    status="plan",
-    agent="Claude",
-    meta={
-        "reasoning": {
-            "why": "User requested this feature",
-            "what": "Creating new Scribe project for tracking",
-            "how": "Will follow PROTOCOL workflow"
-        }
-    }
-)
-
-# 3. Spawn research analyst (haiku) to gather context
-Task(
-    subagent_type="scribe-research-analyst",
-    model="haiku",
-    prompt="Research context for feature-name..."
-)
+mybb_plugin_uninstall(codename, remove_files=True)  # Remove from TestForum
+mybb_plugin_install(codename)                        # Redeploy fresh
 ```
 
-### Session Completion
+### Theme Installation Gotchas
 
-Always log completion at end of significant work:
+**Theme installation order matters:**
+1. Create theme record first (get new tid)
+2. THEN deploy stylesheets to that tid
+3. THEN set templateset property
+4. NEVER hardcode `tid=1` (that's Master Style)
 
 ```python
-append_entry(
-    message="Completed <task>: <summary>",
-    status="success",
-    agent="Claude",
-    meta={
-        "deliverables": ["file1.py", "file2.py"],
-        "confidence": 0.9,
-        "reasoning": {
-            "why": "Task objectives met",
-            "what": "Implemented X, Y, Z",
-            "how": "Used approach A, tested with B"
-        }
-    }
-)
+# WRONG - goes to Master Style
+deploy_stylesheets(tid=1)
+
+# CORRECT
+new_tid = create_theme(name="MyTheme", parent=1)
+deploy_stylesheets(tid=new_tid)
+```
+
+**Templateset property required:**
+Themes MUST have `templateset` in their properties or custom templates will not load:
+```php
+// Without templateset, MyBB only loads sid=-2 (master)
+// With templateset=1, MyBB loads sid=-2, sid=-1, AND sid=1
+```
+
+### Cache Management
+
+**Direct DB writes bypass cache invalidation.** Always use disk sync workflow, or manually rebuild:
+```python
+mybb_cache_rebuild('templates')  # After template changes
+mybb_cache_rebuild('themes')     # After theme changes
+```
+
+**Protected caches - NEVER clear:**
+- `version` - Contains MyBB version code (clearing breaks forum)
+- `internal_settings` - Contains encryption keys
+
+### Template Set IDs
+
+| SID | Meaning | Usage |
+|-----|---------|-------|
+| `-2` | Master templates | Base templates, never delete |
+| `-1` | Global templates | Shared across themes |
+| `>= 1` | Template set overrides | Theme-specific customizations |
+
+### Parameter Conventions
+
+- **Forum/Thread/Post IDs:** Always integers, never strings
+- **Template titles:** Exact match required (case-sensitive)
+- **Codenames:** Lowercase with underscores (`my_plugin`)
+- **Visibility:** `"public"` or `"private"` for workspace location
+
+## Development Workflow
+
+### Plugin Manager Workflow
+
+**MANDATORY: Use Plugin Manager for all plugin development.**
+
+1. **Create plugin:** `mybb_create_plugin(codename, name, description)`
+2. **Edit in workspace:** `plugin_manager/plugins/public/{codename}/` or `private/`
+3. **Deploy:** `mybb_plugin_install(codename)`
+4. **Test in browser:** http://localhost:8022
+5. **Iterate:** Full uninstall/reinstall cycle for changes
+
+**NEVER:**
+- Create workspace files directly (use `mybb_create_plugin`)
+- Copy files to TestForum manually (use `mybb_plugin_install`)
+- Edit files in TestForum (edit workspace, then deploy)
+
+**Plugin workspace structure:**
+```
+plugin_manager/plugins/public/{codename}/
+├── {codename}.php           # Main plugin file
+├── meta.json                # Plugin metadata
+├── templates/               # Template files (.html)
+│   └── {codename}_*.html    # Syncs to sid=-2 (master)
+├── inc/languages/english/   # Language files
+│   └── {codename}.lang.php
+└── jscripts/                # JavaScript files (deployed to TestForum)
+```
+
+### Disk Sync Workflow
+
+**For template and stylesheet development:**
+
+1. **Export templates:** `mybb_sync_export_templates("Default Templates")`
+2. **Edit files in:** `mybb_sync/template_sets/`
+3. **Start watcher:** `mybb_sync_start_watcher()`
+4. **Changes auto-sync** to database
+
+**ALWAYS edit via disk sync. NEVER use `mybb_write_template` during development.**
+
+The file watcher monitors disk changes and syncs to the database automatically. This is the primary development workflow.
+
+### Theme Development Workflow
+
+**Themes live in workspace:** `plugin_manager/themes/public/{codename}/` or `private/`
+
+```
+plugin_manager/themes/public/{codename}/
+├── meta.json                # Theme metadata
+├── stylesheets/             # CSS files (deployed to DB)
+│   ├── global.css
+│   └── custom.css
+├── templates/               # Template overrides
+│   └── headerinclude.html
+└── jscripts/                # JavaScript (deployed to TestForum)
+    └── theme-scripts.js
+```
+
+**Install theme:**
+```python
+mybb_theme_uninstall(codename, remove_from_db=True)  # Clean slate
+mybb_theme_install(codename, visibility="public", set_default=True)  # MUST set_default!
+```
+
+**Theme install deploys:**
+- Stylesheets → Database (mybb_themes, mybb_stylesheets)
+- Templates → Database (mybb_templates at sid=1)
+- jscripts/, images/ → TestForum filesystem (tracked for uninstall)
+
+### Language Files
+
+**Location:** `inc/languages/english/{codename}.lang.php`
+**Admin:** `inc/languages/english/admin/{codename}.lang.php`
+
+**Format:**
+```php
+<?php
+$l['myplugin_hello'] = 'Hello World';
+$l['myplugin_settings'] = 'Plugin Settings';
+```
+
+**Usage:**
+- PHP: `$lang->myplugin_hello`
+- Templates: `{$lang->myplugin_hello}`
+
+**Validation:**
+```python
+mybb_lang_validate(codename)      # Check for missing/unused keys
+mybb_lang_generate_stub(codename) # Generate placeholders for missing
+```
+
+**ALWAYS maintain language files alongside code changes.**
+
+### Git Hygiene
+
+**Parent repo (MyBB Playground) - use CLI git:**
+- Scribe docs (`.scribe/`)
+- MCP server code (`mybb_mcp/`)
+- Wiki documentation (`docs/wiki/`)
+
+**Plugin/Theme repos - use MCP workspace git tools:**
+```python
+mybb_workspace_git_init(codename="my_plugin", visibility="private")
+mybb_workspace_git_commit(codename="my_plugin", message="Add feature", visibility="private")
+mybb_workspace_git_push(codename="my_plugin", visibility="private")
+
+# For themes, add type="theme"
+mybb_workspace_git_commit(codename="my_theme", type="theme", message="Update styles")
+```
+
+### Wiki Maintenance
+
+**Mandatory documentation updates:**
+- New MCP tools → add to `docs/wiki/mcp_tools/` appropriate category
+- Changed tool behavior → update tool documentation
+- New Plugin Manager features → update `docs/wiki/plugin_manager/`
+
+**Outdated docs are worse than no docs.**
+
+## Known Issues & Gotchas
+
+### Concurrent Scribe Agent Sessions
+
+**Session collision** occurs when multiple agents with the same name work on different Scribe projects within the same repository concurrently.
+
+**Use scoped agent names:**
+```python
+# Safe - unique names
+agent="CoderAgent-ProjectX"
+agent="CoderAgent-ProjectY"
+
+# Collision risk
+agent="CoderAgent"  # on both projects simultaneously
+```
+
+Not affected: Sequential dispatches, different repositories, or single agent switching projects.
+
+### MyBB Context
+
+- MyBB is 15+ year old PHP forum software with mature but dated architecture
+- Work within MyBB's hook/template system - don't try to modernize MyBB itself
+- We're building tooling to make MyBB development easier and AI-accessible
+- Set realistic expectations - some things are limited by MyBB's design
+
+### DO NOT Edit Core MyBB Files
+
+**Never modify files in `TestForum/` that are part of core MyBB.**
+
+All customization must be through:
+- Plugins (`TestForum/inc/plugins/`)
+- Templates (via MCP tools or Admin CP)
+- Stylesheets (via MCP tools or Admin CP)
+- Language files (`TestForum/inc/languages/*/`)
+
+Core files will be overwritten on MyBB upgrades. Hooks and plugins are the correct extension mechanism.
+
+### Common Pitfalls
+
+| Pitfall | Correct Approach |
+|---------|------------------|
+| Editing TestForum files directly | Edit workspace, deploy via Plugin Manager |
+| Using `mybb_write_template` in development | Use disk sync workflow |
+| Forgetting `set_default=True` for themes | Always include when installing themes |
+| Single coder on large scope | Break into bounded task packages |
+| Direct database connections | Use MCP tools exclusively |
+| Creating `*_v2` replacement files | Edit/extend existing files |
 
 ## Key Files
 
 | File | Purpose |
 |------|---------|
-| `mybb_mcp/mybb_mcp/server.py` | MCP server orchestration (116 lines) |
-| `mybb_mcp/mybb_mcp/tools_registry.py` | All 94 tool definitions |
-| `mybb_mcp/mybb_mcp/handlers/` | Modular tool handlers (15 modules, 102 handlers) |
-| `mybb_mcp/mybb_mcp/handlers/dispatcher.py` | Dictionary-based tool routing |
-| `mybb_mcp/mybb_mcp/db/connection.py` | Database operations for templates, themes, plugins |
-| `mybb_mcp/mybb_mcp/tools/plugins.py` | Plugin scaffolding templates and hooks reference |
-| `mybb_mcp/mybb_mcp/config.py` | Configuration loading from .env |
-| `.env` | Database credentials and paths (gitignored) |
-| `TestForum/inc/plugins/` | Where plugins are installed |
-| `TestForum/inc/languages/english/` | Language files for plugins |
+| `mybb_mcp/mybb_mcp/server.py` | MCP server orchestration |
+| `mybb_mcp/mybb_mcp/tools_registry.py` | 112 tool definitions |
+| `mybb_mcp/mybb_mcp/handlers/` | Tool handler modules |
+| `mybb_mcp/mybb_mcp/db/connection.py` | Database operations |
+| `plugin_manager/installer.py` | Plugin/theme deployment |
+| `.env` | Database credentials (gitignored) |
 
-## Documentation Reference
+## Living Document
 
-Comprehensive technical documentation lives in `/docs/wiki/`. Use these for detailed reference — they're kept in sync with the codebase.
+These sections are meant to be updated as we work. Add discoveries here.
 
-### Quick Links
+### Active Scribe Projects
 
-| Section | Index | What's There |
-|---------|-------|--------------|
-| **Getting Started** | [index](docs/wiki/getting_started/index.md) | Installation, quickstart tutorial, prerequisites |
-| **MCP Tools** | [index](docs/wiki/mcp_tools/index.md) | All 102+ tools with parameters, return formats, examples |
-| **Plugin Manager** | [index](docs/wiki/plugin_manager/index.md) | Workspace, deployment, PHP lifecycle, database schema |
-| **Architecture** | [index](docs/wiki/architecture/index.md) | MCP server internals, disk sync, configuration |
-| **Best Practices** | [index](docs/wiki/best_practices/index.md) | Plugin/theme development patterns, security |
+<!-- Update as projects are created/completed -->
+Use `mcp__scribe__list_projects()` to see current projects in this repo.
 
-### Complex Plugin Development (IMPORTANT)
+Recent projects:
+- `claude-md-rewrite` — This documentation overhaul
+- `flavor-theme-rebuild` — Flavor theme with Alpine.js
 
-For building production-quality plugins with multiple files, JavaScript, AJAX, Admin CP modules, and proper MyBB standards compliance, see the **[Plugin Development Guide](docs/wiki/best_practices/plugin_development.md)**.
+### Recent Discoveries
 
-**Key sections:**
-- **MyBB Settings vs Config Files** — User-configurable options MUST use MyBB ACP settings, not config files
-- **Complex Plugin Architecture** — Multi-file structure, directory organization, meta.json
-- **JavaScript Integration** — Loading scripts via hooks, AJAX handlers with CSRF protection
-- **Admin CP Modules** — Custom admin pages with proper permissions
-- **Template Groups** — Organizing plugin templates for Admin CP visibility
+<!-- Add new learnings here, move to permanent sections when stable -->
 
-### When to Check the Wiki
+**2026-01-25:**
+- Theme `set_default=True` parameter is mandatory for theme installation
+- `templateset` property required in theme properties for custom templates to load
+- Theme installer must deploy jscripts/images to TestForum filesystem, not just DB
 
-- **Before implementing a feature** — check if patterns/tools already exist
-- **When using MCP tools** — full parameter docs and examples in `mcp_tools/`
-- **Plugin/theme development** — workflows documented in `plugin_manager/` and `best_practices/`
-- **Understanding the system** — architecture docs explain how components work together
+**2026-01-24:**
+- MCP tools are not importable as Python functions - use MyBBDatabase methods
+- Protected caches (`version`, `internal_settings`) must never be cleared
 
-### Wiki Structure
+### Environment Notes
 
-```
-docs/wiki/
-├── index.md                    # Main entry point
-├── getting_started/            # Installation, quickstart
-├── mcp_tools/                  # Tool reference (102+ tools)
-│   ├── index.md               # Overview + tool categories
-│   ├── templates.md           # 9 template tools
-│   ├── themes_stylesheets.md  # 6 theme/style tools
-│   ├── plugins.md             # 15 plugin tools
-│   ├── forums_threads_posts.md # 17 content tools
-│   ├── users_moderation.md    # 14 user/mod tools
-│   ├── search.md              # 4 search tools
-│   ├── admin_settings.md      # 11 admin tools
-│   ├── tasks.md               # 6 task tools
-│   ├── disk_sync.md           # 5 sync tools
-│   ├── languages.md           # 3 language validation tools
-│   └── database.md            # 1 query tool
-├── plugin_manager/             # Plugin Manager system
-├── architecture/               # System internals
-└── best_practices/             # Development guidelines
-```
-
-## Testing
-
-### Test MCP Connection
-```bash
-claude mcp get mybb
-# Should show: Status: ✓ Connected
-```
-
-### Test Database Connection
-```bash
-cd mybb_mcp
-source .venv/bin/activate
-python -c "from mybb_mcp.config import load_config; from mybb_mcp.db import MyBBDatabase; db = MyBBDatabase(load_config().db); print(db.list_template_sets())"
-```
-
-### Test in Claude Code
-```
-"List MyBB template sets"
-"Show me the header template"
-"Create a test plugin called 'my_test'"
-```
-
-## Common Tasks
-
-### Add a new MCP tool
-1. Add tool definition to `all_tools` list in `server.py`
-2. Add handler in `handle_tool()` function
-3. If complex, add helper function in appropriate `tools/*.py` file
-
-### Modify plugin scaffolding
-Edit `PLUGIN_TEMPLATE` in `mybb_mcp/tools/plugins.py`
-
-### Add new hooks to reference
-Edit `HOOKS_REFERENCE` dict in `mybb_mcp/tools/plugins.py`
+<!-- WSL quirks, version requirements, local setup notes -->
+- **WSL2:** File watcher may need `MYBB_SYNC_DISABLE_CACHE=1` for reliability
+- **PHP:** Requires 8.0+ (installed via `setup_dev_env.sh`)
+- **Python:** Requires 3.10+ with venv
+- **Port:** MyBB runs on 8022 by default (configurable in start_mybb.sh)
 
 ## Links
 

@@ -369,9 +369,9 @@ Plugin Manager database (for “does this exist?” checks):
 - `.plugin_manager/projects.db` at repo root
 
 ## Commit Discipline (When Asked)
-Codex does **not** commit by default. If the user asks for commits, follow the repo’s “orchestrator commit gates” concept:
+Codex does **not** commit by default. If the user asks for commits, follow the repo's "orchestrator commit gates" concept:
 - Parent repo commits (CLI `git commit`): Scribe docs, MCP server code, scripts, wiki.
-- Plugin/theme repo commits (MCP): `mybb_plugin_git_commit(...)` inside the plugin/theme workspace (especially for private repos).
+- Plugin/theme repo commits (MCP): `mybb_workspace_git_commit(...)` inside the plugin/theme workspace (especially for private repos).
 
 Rationale: Scribe docs live in the parent repo; private plugins/themes are nested repos and should be committed with plugin git tools.
 

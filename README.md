@@ -13,7 +13,7 @@
 
 [Getting Started](#-quick-start) •
 [Documentation](docs/wiki/index.md) •
-[99 MCP Tools](docs/wiki/mcp_tools/index.md) •
+[112 MCP Tools](docs/wiki/mcp_tools/index.md) •
 [Plugin Manager](docs/wiki/plugin_manager/index.md)
 
 </div>
@@ -22,7 +22,7 @@
 
 ## What is MyBB Playground?
 
-MyBB Playground connects **Claude Code** directly to your MyBB installation through **99 MCP tools**. Instead of manually editing PHP files, writing SQL queries, and navigating the admin panel, you can develop plugins and themes using natural language.
+MyBB Playground connects **Claude Code** directly to your MyBB installation through **112 MCP tools**. Instead of manually editing PHP files, writing SQL queries, and navigating the admin panel, you can develop plugins and themes using natural language.
 
 ```
 You: "Create a plugin that shows user badges based on post count"
@@ -39,9 +39,10 @@ Claude: Creates complete plugin with:
 
 | Feature | Description |
 |---------|-------------|
-| **99 MCP Tools** | Full MyBB API coverage — templates, themes, plugins, forums, users, moderation, settings, server |
-| **Disk Sync** | Edit templates/stylesheets in your editor, auto-syncs to database |
+| **112 MCP Tools** | Full MyBB API coverage — templates, themes, plugins, forums, users, moderation, settings, server |
+| **Theme Manager** | Complete theme development workflow with stylesheets, template overrides, and jscripts |
 | **Plugin Manager** | Structured workspace for plugin development with deployment tracking |
+| **Workspace Sync** | Hash-based change detection syncs only modified files between workspace and database |
 | **PHP Bridge** | Execute actual PHP lifecycle functions (_install, _activate, etc.) |
 | **AI-Native** | Built specifically for Claude Code integration |
 
@@ -186,22 +187,22 @@ MyBB_Playground/
 
 ---
 
-## MCP Tools (99)
+## MCP Tools (112)
 
 Full reference: [docs/wiki/mcp_tools/index.md](docs/wiki/mcp_tools/index.md)
 
 | Category | Tools | Description |
 |----------|-------|-------------|
 | [**Templates**](docs/wiki/mcp_tools/templates.md) | 9 | List, read, write, batch operations, find/replace, outdated detection |
-| [**Themes**](docs/wiki/mcp_tools/themes_stylesheets.md) | 6 | Theme management, stylesheet CRUD, theme creation |
+| [**Themes**](docs/wiki/mcp_tools/themes_stylesheets.md) | 18 | Theme install/uninstall, stylesheet CRUD, XML import/export, template sets |
 | [**Plugins**](docs/wiki/mcp_tools/plugins.md) | 15 | Full lifecycle — create, install, activate, hooks discovery |
-| [**Plugin Git**](docs/wiki/mcp_tools/plugins.md#git-tools) | 7 | Init, GitHub create, status, commit, push, pull |
+| [**Workspace Git**](docs/wiki/mcp_tools/plugins.md#git-tools) | 7 | Init, GitHub create, status, commit, push, pull (plugins & themes) |
+| [**Workspace Sync**](docs/wiki/mcp_tools/disk_sync.md) | 6 | Bidirectional sync with hash-based change detection |
 | [**Forums/Threads/Posts**](docs/wiki/mcp_tools/forums_threads_posts.md) | 17 | Complete content management |
 | [**Users/Moderation**](docs/wiki/mcp_tools/users_moderation.md) | 14 | User management, mod actions, logging |
 | [**Search**](docs/wiki/mcp_tools/search.md) | 4 | Posts, threads, users, advanced search |
 | [**Admin/Settings**](docs/wiki/mcp_tools/admin_settings.md) | 11 | Settings, cache control, statistics |
 | [**Tasks**](docs/wiki/mcp_tools/tasks.md) | 6 | Scheduled task management |
-| [**Disk Sync**](docs/wiki/mcp_tools/disk_sync.md) | 5 | Export, import, file watcher control |
 | [**Server Orchestration**](docs/wiki/mcp_tools/orchestration.md) | 5 | Start, stop, restart, status, query logs |
 | [**Database**](docs/wiki/mcp_tools/database.md) | 1 | Read-only SQL queries |
 
@@ -258,9 +259,34 @@ plugin_manager/plugins/public/
 1. **Create:** `mybb_create_plugin(codename="my_plugin", ...)`
 2. **Develop:** Edit files in workspace
 3. **Deploy:** `mybb_plugin_install(codename="my_plugin")`
-4. **Iterate:** Changes tracked, easy rollback
+4. **Iterate:** `mybb_workspace_sync(codename="my_plugin", type="plugin")` for quick syncs
 
 > **Full guide:** [docs/wiki/plugin_manager/index.md](docs/wiki/plugin_manager/index.md)
+
+### Theme Development
+
+```
+plugin_manager/themes/public/
+└── my_theme/
+    ├── meta.json              # Theme metadata
+    ├── stylesheets/           # CSS files (synced to database)
+    │   ├── global.css
+    │   └── custom.css
+    ├── templates/             # Template overrides (organized by group)
+    │   ├── Header Templates/
+    │   └── Footer Templates/
+    └── jscripts/              # JavaScript (deployed to TestForum)
+```
+
+1. **Install:** `mybb_theme_install(codename="my_theme", set_default=True)`
+2. **Export from DB:** `mybb_workspace_sync(codename="my_theme", type="theme", direction="from_db")`
+3. **Edit:** Modify stylesheets/templates in workspace
+4. **Sync to DB:** `mybb_workspace_sync(codename="my_theme", type="theme")` — only changed files sync
+
+**Key theme tools:**
+- `mybb_theme_install` / `mybb_theme_uninstall` — Full lifecycle management
+- `mybb_workspace_sync` — Hash-based sync (only changed files)
+- `mybb_theme_export_xml` / `mybb_theme_import_xml` — MyBB-compatible XML format
 
 ### Private Plugins & Git Integration
 
@@ -279,20 +305,22 @@ plugin_manager/plugins/
 **Git workflow via MCP tools:**
 
 ```python
-# Initialize git for private plugin
-mybb_plugin_git_init(codename="my_plugin", visibility="private")
+# PLUGINS - type defaults to "plugin", use visibility for public/private
+mybb_workspace_git_init(codename="my_plugin", visibility="private")
+mybb_workspace_github_create(codename="my_plugin", repo_visibility="private")
+mybb_workspace_git_commit(codename="my_plugin", message="Add feature X")
+mybb_workspace_git_push(codename="my_plugin")
 
-# Create GitHub repo (auto-prefixes with mybb_playground_)
-mybb_plugin_github_create(codename="my_plugin", repo_visibility="private")
-
-# Commit and push changes
-mybb_plugin_git_commit(codename="my_plugin", visibility="private", message="Add feature X")
-mybb_plugin_git_push(codename="my_plugin", visibility="private")
+# THEMES - type="theme" is REQUIRED, no visibility param
+mybb_workspace_git_init(codename="my_theme", type="theme")
+mybb_workspace_github_create(codename="my_theme", type="theme", repo_visibility="public")
+mybb_workspace_git_commit(codename="my_theme", type="theme", message="Update styles")
+mybb_workspace_git_push(codename="my_theme", type="theme")
 ```
 
 **Workspace vs parent repo:**
 - **Parent repo (MyBB Playground):** CLI git for MCP server, scripts, docs
-- **Private plugins/themes:** MCP git tools (`mybb_plugin_git_*`)
+- **Plugin/theme workspaces:** MCP git tools (`mybb_workspace_git_*`) with `type` parameter
 
 ### Template/Stylesheet Editing
 
@@ -318,7 +346,7 @@ mybb_sync_start_watcher()
 | Section | Description |
 |---------|-------------|
 | [**Getting Started**](docs/wiki/getting_started/index.md) | Installation, quickstart tutorial |
-| [**MCP Tools Reference**](docs/wiki/mcp_tools/index.md) | All 99 tools with parameters and examples |
+| [**MCP Tools Reference**](docs/wiki/mcp_tools/index.md) | All 112 tools with parameters and examples |
 | [**Plugin Manager**](docs/wiki/plugin_manager/index.md) | Workspace, deployment, PHP lifecycle |
 | [**Architecture**](docs/wiki/architecture/index.md) | MCP server, disk sync, configuration |
 | [**Best Practices**](docs/wiki/best_practices/index.md) | Plugin/theme patterns, security |

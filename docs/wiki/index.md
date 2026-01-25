@@ -61,6 +61,13 @@ MyBB-specific development patterns and security guidelines.
 - [Theme Development](best_practices/theme_development.md) - Theme and stylesheet best practices
 - [Security Guidelines](best_practices/security.md) - Security considerations for MyBB development
 
+### 🔄 [Workflows](workflows/index.md)
+Operational workflows and protocols for development.
+
+**Contents:**
+- [Workflows Index](workflows/index.md) - Overview of available workflows
+- [Scribe Protocol](workflows/scribe_protocol.md) - Research → Architect → Code → Review workflow
+
 ### 🔌 [Plugins](plugins/index.md)
 Documentation for plugins that ship with MyBB Playground.
 
