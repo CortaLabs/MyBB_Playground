@@ -149,12 +149,17 @@ All config in `.env` at project root:
 
 ### Workspace Sync (Fast Development Iteration)
 
-**Use `mybb_workspace_sync` for fast iteration during development:**
+**Use `mybb_workspace_sync` for fast iteration during development.**
+
+Hash-based change detection ensures only modified files sync - even with 976+ templates, only changed files are written.
 
 ```python
-# Quick sync after editing workspace files (NO reinstall)
+# Sync workspace changes TO database (default direction)
 mybb_workspace_sync(codename="my_theme", type="theme")
 mybb_workspace_sync(codename="my_plugin", type="plugin")
+
+# Export FROM database to workspace (for existing themes/content)
+mybb_workspace_sync(codename="my_theme", type="theme", direction="from_db")
 
 # Preview what would sync
 mybb_workspace_sync(codename="my_theme", type="theme", dry_run=True)
@@ -165,9 +170,12 @@ mybb_workspace_sync(codename="my_theme", type="theme", full_pipeline=True)
 
 | Mode | When to Use |
 |------|-------------|
-| **Incremental** (default) | CSS, template, PHP file edits - fast, no lifecycle |
+| **Incremental to_db** (default) | CSS, template, PHP file edits - only changed files sync |
+| **Incremental from_db** | Export templates/stylesheets from existing DB theme to workspace |
 | **Full Pipeline** | Settings changes, new hooks, DB schema changes |
 | **Dry Run** | Preview file counts before syncing |
+
+**Manifest files:** Each workspace has `.sync_manifest.json` tracking file hashes and DB datelines. These are gitignored and auto-managed.
 
 **Rule:** Use incremental sync for routine edits. Use `full_pipeline=True` only when you've changed plugin settings, added new hooks, or modified `_install()`/`_activate()` functions.
 
@@ -745,30 +753,47 @@ The file watcher monitors disk changes and syncs to the database automatically. 
 
 ### Theme Development Workflow
 
-**Themes live in workspace:** `plugin_manager/themes/public/{codename}/` or `private/`
+**Themes live in workspace:** `plugin_manager/themes/public/{codename}/`
 
 ```
 plugin_manager/themes/public/{codename}/
-├── meta.json                # Theme metadata
-├── stylesheets/             # CSS files (deployed to DB)
+├── meta.json                # Theme metadata (name, version, author)
+├── stylesheets/             # CSS files (synced to database)
 │   ├── global.css
 │   └── custom.css
-├── templates/               # Template overrides
-│   └── headerinclude.html
-└── jscripts/                # JavaScript (deployed to TestForum)
+├── templates/               # Template overrides (organized by group)
+│   ├── Header Templates/
+│   │   └── header.html
+│   └── Footer Templates/
+│       └── footer.html
+└── jscripts/                # JavaScript (deployed to TestForum filesystem)
     └── theme-scripts.js
 ```
 
-**Install theme:**
+**Full workflow (new theme or major changes):**
 ```python
 mybb_theme_uninstall(codename, remove_from_db=True)  # Clean slate
 mybb_theme_install(codename, visibility="public", set_default=True)  # MUST set_default!
 ```
 
+**Fast iteration workflow (CSS/template edits):**
+```python
+# Edit files in workspace, then sync only changes
+mybb_workspace_sync(codename="my_theme", type="theme")  # Only changed files sync
+```
+
+**Export existing theme to workspace:**
+```python
+# Pull templates from DB to workspace (organized by groups)
+mybb_workspace_sync(codename="my_theme", type="theme", direction="from_db")
+```
+
 **Theme install deploys:**
-- Stylesheets → Database (mybb_themes, mybb_stylesheets)
-- Templates → Database (mybb_templates at sid=1)
-- jscripts/, images/ → TestForum filesystem (tracked for uninstall)
+- Stylesheets → Database (mybb_themestylesheets table)
+- Templates → Database (mybb_templates at theme's templateset sid)
+- jscripts/, images/ → TestForum filesystem (tracked for clean uninstall)
+
+**CRITICAL: `set_default=True` is mandatory.** Without it, the `templateset` property isn't set and custom templates won't load (MyBB only loads master templates).
 
 ### Language Files
 
@@ -896,14 +921,24 @@ Recent projects:
 
 <!-- Add new learnings here, move to permanent sections when stable -->
 
-**2026-01-25:**
+**2026-01-25 (Hash-based Sync):**
+- SyncManifest class tracks file hashes (MD5) and DB datelines for change detection
+- `direction="from_db"` exports templates organized by groups (Header Templates/, etc.)
+- Manifest files (`.sync_manifest.json`) must be excluded from sync to avoid infinite loops
+- `WORKSPACE_ONLY_PREFIXES` tuple catches manifest patterns via startswith()
+- Sync output now shows "Files unchanged: N" for clarity (not just "Files synced: 0")
+
+**2026-01-25 (Theme Manager v1):**
 - Theme `set_default=True` parameter is mandatory for theme installation
 - `templateset` property required in theme properties for custom templates to load
 - Theme installer must deploy jscripts/images to TestForum filesystem, not just DB
+- Stylesheets use `attachedto` field - empty string means "all pages"
+- Template overrides go to theme's templateset sid, not master (sid=-2)
 
 **2026-01-24:**
 - MCP tools are not importable as Python functions - use MyBBDatabase methods
 - Protected caches (`version`, `internal_settings`) must never be cleared
+- PHP serialized properties need proper type handling (int vs string for templateset)
 
 ### Environment Notes
 

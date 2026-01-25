@@ -247,3 +247,9 @@ plugin_manager/themes/*/
 .sync_manifest*.json
 .sync_manifest*.json.tmp
 .sync_manifest*.json.corrupt.*
+plugin_manager/archived/*
+plugin_manager/plugins/forked/*
+mybb_mcp/plugin_manager/projects.db
+plugin_manager/projects.db
+*:Zone.Identifier
+exports/*
