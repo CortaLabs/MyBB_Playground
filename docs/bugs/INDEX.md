@@ -1,19 +1,22 @@
 # Bug Reports Index
 
-*Last Updated: 2026-01-25 09:05 UTC*
+*Last Updated: 2026-01-26 10:25 UTC*
 
 This directory contains bug reports generated during development and testing.
 
 ## Bug Statistics
 
-- **Total Reports:** 33
+- **Total Reports:** 36
 - **Categories:** 6
 
 ## Recent Bug Reports
 
-- **[infrastructure/2026-01-25_workspace_sync_bridge_bypass](infrastructure/2026-01-25_workspace_sync_bridge_bypass/report.md)** - 2026-01-25 09:05 (FIXED - partial)
-- **[infrastructure/2026-01-25_incremental_sync_bypasses_infrastructure](infrastructure/2026-01-25_incremental_sync_bypasses_infrastructure/report.md)** - 2026-01-25 08:53 (FIXED)
-- **[infrastructure/2026-01-25_plugins_cache_unprotected](infrastructure/2026-01-25_plugins_cache_unprotected/report.md)** - 2026-01-25 03:40
+- **[infrastructure/2026-01-26_git_visibility_ignored](infrastructure/2026-01-26_git_visibility_ignored/report.md)** - 2026-01-26 05:22
+- **[ui/2026-01-26_scroll_broken_smooth_behavior](ui/2026-01-26_scroll_broken_smooth_behavior/report.md)** - 2026-01-26 02:31
+- **[ui/2026-01-26_scroll_broken_svg_texture](ui/2026-01-26_scroll_broken_svg_texture/report.md)** - 2026-01-26 02:25
+- **[infrastructure/2026-01-25_workspace_sync_bridge_bypass](infrastructure/2026-01-25_workspace_sync_bridge_bypass/report.md)** - 2026-01-25 04:03
+- **[infrastructure/2026-01-25_incremental_sync_bypasses_infrastructure](infrastructure/2026-01-25_incremental_sync_bypasses_infrastructure/report.md)** - 2026-01-25 03:53
+- **[infrastructure/2026-01-25_plugins_cache_unprotected](infrastructure/2026-01-25_plugins_cache_unprotected/report.md)** - 2026-01-25 03:41
 - **[infrastructure/2026-01-25_sync_plugin_php_overlay](infrastructure/2026-01-25_sync_plugin_php_overlay/report.md)** - 2026-01-25 03:27
 - **[infrastructure/2026-01-25_theme_stylesheet_list_templateset_wipe](infrastructure/2026-01-25_theme_stylesheet_list_templateset_wipe/report.md)** - 2026-01-25 02:30
 - **[infrastructure/2026-01-25_theme_templateset_verification](infrastructure/2026-01-25_theme_templateset_verification/report.md)** - 2026-01-25 01:57
@@ -28,13 +31,8 @@ This directory contains bug reports generated during development and testing.
 - **[infrastructure/2026-01-24_theme_install_incorrect_mcp_call](infrastructure/2026-01-24_theme_install_incorrect_mcp_call/report.md)** - 2026-01-24 03:27
 - **[infrastructure/2026-01-24_theme_status_wrong_table](infrastructure/2026-01-24_theme_status_wrong_table/report.md)** - 2026-01-24 03:25
 - **[infrastructure/2026-01-23_nested_threadpool_deadlock](infrastructure/2026-01-23_nested_threadpool_deadlock/report.md)** - 2026-01-23 08:49
-- **[infrastructure/2026-01-23_export_templates_timeout](infrastructure/2026-01-23_export_templates_timeout/report.md)** - 2026-01-23 07:22
-- **[infrastructure/2026-01-23_uninstaller_core_deletion](infrastructure/2026-01-23_uninstaller_core_deletion/report.md)** - 2026-01-23 06:37
-- **[ui/2026-01-21_usergroup_permissions_not_appearing](ui/2026-01-21_usergroup_permissions_not_appearing/report.md)** - 2026-01-21 05:45
-- **[ui/2026-01-21_preview_form_missing_options](ui/2026-01-21_preview_form_missing_options/report.md)** - 2026-01-21 01:51
-- **[language/2026-01-21_codes_campaigns_lang_loading](language/2026-01-21_codes_campaigns_lang_loading/report.md)** - 2026-01-20 22:53
 
-*... and 11 older reports*
+*... and 16 older reports*
 
 
 ## Browse by Category
@@ -44,15 +42,13 @@ This directory contains bug reports generated during development and testing.
 - [2026-01-21_spam_logs_schema_mismatch](database/2026-01-21_spam_logs_schema_mismatch/report.md)
 - [2026-01-21_bulk_operations_schema_mismatch](database/2026-01-21_bulk_operations_schema_mismatch/report.md)
 
-### Infrastructure (20 reports)
-- [2026-01-25_workspace_sync_bridge_bypass](infrastructure/2026-01-25_workspace_sync_bridge_bypass/report.md) (FIXED - partial)
-- [2026-01-25_incremental_sync_bypasses_infrastructure](infrastructure/2026-01-25_incremental_sync_bypasses_infrastructure/report.md) (FIXED)
+### Infrastructure (21 reports)
+- [2026-01-26_git_visibility_ignored](infrastructure/2026-01-26_git_visibility_ignored/report.md)
+- [2026-01-25_workspace_sync_bridge_bypass](infrastructure/2026-01-25_workspace_sync_bridge_bypass/report.md)
+- [2026-01-25_incremental_sync_bypasses_infrastructure](infrastructure/2026-01-25_incremental_sync_bypasses_infrastructure/report.md)
 - [2026-01-25_plugins_cache_unprotected](infrastructure/2026-01-25_plugins_cache_unprotected/report.md)
 - [2026-01-25_sync_plugin_php_overlay](infrastructure/2026-01-25_sync_plugin_php_overlay/report.md)
-- [2026-01-25_theme_stylesheet_list_templateset_wipe](infrastructure/2026-01-25_theme_stylesheet_list_templateset_wipe/report.md)
-- [2026-01-25_theme_templateset_verification](infrastructure/2026-01-25_theme_templateset_verification/report.md)
-- [2026-01-25_theme_set_property_type_mismatch](infrastructure/2026-01-25_theme_set_property_type_mismatch/report.md)
-- ... and 13 more
+- ... and 16 more
 
 ### Language (2 reports)
 - [2026-01-21_codes_campaigns_lang_loading](language/2026-01-21_codes_campaigns_lang_loading/report.md)
@@ -65,12 +61,13 @@ This directory contains bug reports generated during development and testing.
 ### Template (1 reports)
 - [2026-01-19_usercp_500_template_syntax](template/2026-01-19_usercp_500_template_syntax/report.md)
 
-### Ui (5 reports)
+### Ui (7 reports)
+- [2026-01-26_scroll_broken_smooth_behavior](ui/2026-01-26_scroll_broken_smooth_behavior/report.md)
+- [2026-01-26_scroll_broken_svg_texture](ui/2026-01-26_scroll_broken_svg_texture/report.md)
 - [2026-01-21_usergroup_permissions_not_appearing](ui/2026-01-21_usergroup_permissions_not_appearing/report.md)
 - [2026-01-21_preview_form_missing_options](ui/2026-01-21_preview_form_missing_options/report.md)
 - [2026-01-21_campaigns_missing_nav_tabs](ui/2026-01-21_campaigns_missing_nav_tabs/report.md)
-- [2026-01-21_bulk_buttons](ui/2026-01-21_bulk_buttons/report.md)
-- [2026-01-21_campaigns_nav_loss](ui/2026-01-21_campaigns_nav_loss/report.md)
+- ... and 2 more
 
 
 ---
@@ -79,7 +76,7 @@ This directory contains bug reports generated during development and testing.
 
 - **Index Location:** `/home/austin/projects/MyBB_Playground/docs/bugs/INDEX.md`
 - **Total Categories:** 6
-- **Last Scan:** 2026-01-25 03:40:04 UTC
+- **Last Scan:** 2026-01-26 05:22:37 UTC
 
 ---
 

@@ -111,6 +111,42 @@ mcp__scribe__append_entry(
 
 All agents can and should use **scribe_mcp_read_recent** to read the latest entries to the progress log.
 
+### Template Discovery via Chrome DevTools (IMPORTANT)
+
+**Use Chrome DevTools to identify which templates to edit.** MyBB injects HTML comments marking template boundaries:
+
+```html
+<!-- start: header_welcomeblock_member -->
+...content...
+<!-- end: header_welcomeblock_member -->
+```
+
+**Workflow:**
+1. Navigate to the page in Chrome DevTools: `mcp__chrome-devtools__navigate_page(url="http://localhost:8022")`
+2. Get the raw HTML source:
+   ```python
+   mcp__chrome-devtools__evaluate_script(function="() => document.documentElement.outerHTML")
+   ```
+3. Search the output for `<!-- start:` markers to find template names
+4. Edit the corresponding template in workspace: `plugin_manager/themes/public/{theme}/templates/{Group}/{template}.html`
+5. Sync changes: `mybb_workspace_sync(codename="theme_name", type="theme")`
+6. Reload in Chrome DevTools to see changes instantly
+
+**Why this matters:**
+- MyBB has 900+ templates across 65 groups - grepping is slow and imprecise
+- The rendered HTML shows exactly which templates compose each page element
+- Template markers reveal the injection hierarchy (parent → child relationships)
+- Workspace sync provides instant feedback loop - edit, sync, reload, verify
+
+**Example: Finding where the `<body>` tag lives**
+```
+// In rendered HTML:
+<body>
+<!-- start: header -->
+<div id="container">
+```
+This tells you `<body>` is in the page template (e.g., `index.html`), and `header` is injected inside it.
+
 ## Quick Reference
 
 ### Essential Commands

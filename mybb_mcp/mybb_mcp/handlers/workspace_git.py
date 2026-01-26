@@ -18,10 +18,10 @@ def get_plugin_path(config: Any, codename: str, visibility: str = "public") -> P
     return repo_root / "plugin_manager" / "plugins" / visibility / codename
 
 
-def get_theme_path(config: Any, codename: str) -> Path:
+def get_theme_path(config: Any, codename: str, visibility: str = "public") -> Path:
     """Get the path to a theme workspace directory."""
     repo_root = Path(config.mybb_root).parent
-    return repo_root / "plugin_manager" / "themes" / codename
+    return repo_root / "plugin_manager" / "themes" / visibility / codename
 
 
 def run_git(cwd: Path, *args, timeout: int = 30) -> subprocess.CompletedProcess:
@@ -145,7 +145,7 @@ async def handle_workspace_git_init(args: dict, db: Any, config: Any, sync_servi
 
     # Get path
     if item_type == "theme":
-        path = get_theme_path(config, codename)
+        path = get_theme_path(config, codename, visibility)
     else:
         path = get_plugin_path(config, codename, visibility)
 
@@ -257,7 +257,7 @@ async def handle_workspace_github_create(args: dict, db: Any, config: Any, sync_
 
     # Get path
     if item_type == "theme":
-        path = get_theme_path(config, codename)
+        path = get_theme_path(config, codename, visibility)
     else:
         path = get_plugin_path(config, codename, visibility)
 
@@ -352,7 +352,7 @@ async def handle_workspace_git_status(args: dict, db: Any, config: Any, sync_ser
 
     # Get path
     if item_type == "theme":
-        path = get_theme_path(config, codename)
+        path = get_theme_path(config, codename, visibility)
     else:
         path = get_plugin_path(config, codename, visibility)
 
@@ -413,7 +413,7 @@ async def handle_workspace_git_commit(args: dict, db: Any, config: Any, sync_ser
 
     # Get path
     if item_type == "theme":
-        path = get_theme_path(config, codename)
+        path = get_theme_path(config, codename, visibility)
     else:
         path = get_plugin_path(config, codename, visibility)
 
@@ -525,7 +525,7 @@ async def handle_workspace_git_push(args: dict, db: Any, config: Any, sync_servi
 
     # Get path
     if item_type == "theme":
-        path = get_theme_path(config, codename)
+        path = get_theme_path(config, codename, visibility)
     else:
         path = get_plugin_path(config, codename, visibility)
 
@@ -595,7 +595,7 @@ async def handle_workspace_git_pull(args: dict, db: Any, config: Any, sync_servi
 
     # Get path
     if item_type == "theme":
-        path = get_theme_path(config, codename)
+        path = get_theme_path(config, codename, visibility)
     else:
         path = get_plugin_path(config, codename, visibility)
 
