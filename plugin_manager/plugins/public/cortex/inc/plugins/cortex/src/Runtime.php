@@ -99,9 +99,10 @@ class Runtime extends \templates
             $config['security']['max_expression_length'] ?? 0
         );
 
-        // Initialize Parser with nesting depth limit
+        // Initialize Parser with nesting depth limit AND expression length limit
         $this->parser = new Parser(
-            $config['security']['max_nesting_depth'] ?? 0
+            $config['security']['max_nesting_depth'] ?? 0,
+            $config['security']['max_expression_length'] ?? 0
         );
 
         $this->compiler = new Compiler($this->security);
@@ -276,5 +277,17 @@ class Runtime extends \templates
     public function setEnabled(bool $enabled): void
     {
         $this->enabled = $enabled;
+    }
+
+    /**
+     * Get the security policy instance.
+     *
+     * Useful for checking dangerous function status.
+     *
+     * @return SecurityPolicy The security policy
+     */
+    public function getSecurityPolicy(): SecurityPolicy
+    {
+        return $this->security;
     }
 }

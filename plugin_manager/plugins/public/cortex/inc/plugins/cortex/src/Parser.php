@@ -109,13 +109,53 @@ class Parser
     private int $maxNestingDepth = 0;
 
     /**
+     * Maximum expression length (0 = unlimited)
+     */
+    private int $maxExpressionLength = 0;
+
+    /**
      * Constructor
      *
      * @param int $maxNestingDepth Maximum nesting depth (0 = unlimited)
+     * @param int $maxExpressionLength Maximum expression length (0 = unlimited)
      */
-    public function __construct(int $maxNestingDepth = 0)
+    public function __construct(int $maxNestingDepth = 0, int $maxExpressionLength = 0)
     {
         $this->maxNestingDepth = $maxNestingDepth;
+        $this->maxExpressionLength = $maxExpressionLength;
+    }
+
+    /**
+     * Validate a template name for allowed characters.
+     *
+     * @param string $name The template name to validate
+     * @param int $position The byte offset for error reporting
+     * @return string The validated, trimmed template name
+     * @throws ParseException If the name contains invalid characters
+     */
+    private function validateTemplateName(string $name, int $position): string
+    {
+        $trimmed = trim($name);
+
+        // Must not be empty
+        if ($trimmed === '') {
+            throw ParseException::malformed(
+                "Empty template name",
+                $position,
+                $this->templateName
+            );
+        }
+
+        // Only alphanumeric, underscore, hyphen, space allowed
+        if (!preg_match('/^[a-z0-9_\-\s]+$/i', $trimmed)) {
+            throw ParseException::malformed(
+                "Invalid template name '{$trimmed}' - only letters, numbers, underscore, hyphen, and space allowed",
+                $position,
+                $this->templateName
+            );
+        }
+
+        return $trimmed;
     }
 
     /**
@@ -256,7 +296,10 @@ class Parser
             'if_close' => Token::ifClose($value, $position),
             'func_open' => Token::funcOpen($value, $position, $match['capture1']),
             'func_close' => Token::funcClose($value, $position),
-            'template' => Token::template(trim($match['capture1']), $position),
+            'template' => Token::template(
+                $this->validateTemplateName($match['capture1'], $position),
+                $position
+            ),
             'expression' => Token::expression($match['capture1'], $position),
             'setvar' => Token::setVar($value, $position, $match['capture1'], $match['capture2']),
         };

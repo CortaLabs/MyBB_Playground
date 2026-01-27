@@ -261,6 +261,15 @@ function cortex_init(): void
     try {
         $runtime = new \Cortex\Runtime($templates, $config);
         $templates = $runtime;
+
+        // Log warning if dangerous functions are enabled
+        if ($config['debug'] ?? false) {
+            $security = $GLOBALS['templates']->getSecurityPolicy();
+            if ($security->hasDangerousFunctionsEnabled()) {
+                $dangerous = implode(', ', $security->getDangerousFunctionsEnabled());
+                error_log("[Cortex Security Warning] Dangerous functions enabled in whitelist: {$dangerous}");
+            }
+        }
     } catch (\Throwable $e) {
         if (!empty($config['debug'])) {
             error_log('Cortex initialization failed: ' . $e->getMessage());

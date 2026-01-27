@@ -504,6 +504,42 @@ class SecurityPolicy
     ];
 
     /**
+     * Functions that are potentially dangerous when whitelisted.
+     *
+     * These are technically safe but could enable:
+     * - ReDoS attacks (regex functions)
+     * - Information disclosure (file/debug functions)
+     * - Environment manipulation
+     *
+     * Adding these to additional_allowed_functions triggers warnings.
+     */
+    private const DANGEROUS_FUNCTIONS = [
+        // Regex functions (ReDoS potential)
+        'preg_match',
+        'preg_match_all',
+        'preg_replace',
+        'preg_split',
+        'preg_grep',
+        // File existence (information disclosure)
+        'file_exists',
+        'is_file',
+        'is_dir',
+        'is_readable',
+        'is_writable',
+        'is_executable',
+        'is_link',
+        // Debugging (information disclosure)
+        'var_dump',
+        'print_r',
+        'var_export',
+        'debug_backtrace',
+        'debug_print_backtrace',
+        // Environment
+        'getenv',
+        'putenv',
+    ];
+
+    /**
      * Additional allowed functions (from config)
      * @var array<string>
      */
@@ -521,6 +557,12 @@ class SecurityPolicy
     private int $maxExpressionLength = 0;
 
     /**
+     * Dangerous functions that have been enabled via config
+     * @var array<string>
+     */
+    private array $enabledDangerousFunctions = [];
+
+    /**
      * Constructor
      *
      * @param array $additionalAllowed Additional functions to allow
@@ -535,6 +577,12 @@ class SecurityPolicy
         $this->additionalAllowedFunctions = array_map('strtolower', array_filter($additionalAllowed));
         $this->deniedFunctions = array_map('strtolower', array_filter($denied));
         $this->maxExpressionLength = $maxExpressionLength;
+
+        // Track which dangerous functions were enabled
+        $this->enabledDangerousFunctions = array_values(array_intersect(
+            $this->additionalAllowedFunctions,
+            array_map('strtolower', self::DANGEROUS_FUNCTIONS)
+        ));
     }
 
     /**
@@ -638,6 +686,36 @@ class SecurityPolicy
     public function getAllowedFunctions(): array
     {
         return self::ALLOWED_FUNCTIONS;
+    }
+
+    /**
+     * Check if any dangerous functions have been enabled.
+     *
+     * @return bool True if dangerous functions are in the whitelist
+     */
+    public function hasDangerousFunctionsEnabled(): bool
+    {
+        return !empty($this->enabledDangerousFunctions);
+    }
+
+    /**
+     * Get the list of dangerous functions that have been enabled.
+     *
+     * @return array<string> List of enabled dangerous function names
+     */
+    public function getDangerousFunctionsEnabled(): array
+    {
+        return $this->enabledDangerousFunctions;
+    }
+
+    /**
+     * Get the list of all functions considered dangerous.
+     *
+     * @return array<string> List of dangerous function names
+     */
+    public static function getDangerousFunctionsList(): array
+    {
+        return self::DANGEROUS_FUNCTIONS;
     }
 
     /**

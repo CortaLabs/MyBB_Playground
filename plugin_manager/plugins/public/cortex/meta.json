@@ -48,5 +48,6 @@
     "images": "images/"
   },
   "has_templates": false,
-  "has_database": false
+  "has_database": false,
+  "has_settings": true
 }
