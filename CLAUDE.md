@@ -9,6 +9,55 @@ EDIT THE MCP_BRIDGE FROM `install_files` AND COPY IT INTO THE TESTFORUM.
 
 NO AGENT SHOULD EVER EDIT ANYTHING INSIDE THE TESTFORUM.
 
+**SCRIBE PROTOCOL IS NOT OPTIONAL**  ALWAYS SCRIBE EVENTS, WHAT IS HAPPENING, WHAT ISN'T WORKING.  ORCHESTRATOR IT IS YOUR DUTY TO ENSURE **YOU** MAINTAIN AN AUDITABLE LOG AS WELL.    SUBAGENTS **RELY** ON EXTRA GUIDANCE FROM YOUR USE OF **APPEND_ENTRY**.
+
+### MCP Tool Usage - MANDATORY (ALL AGENTS)
+
+**!!! ATTENTION ALL AGENTS - THIS IS NON-NEGOTIABLE !!!**
+
+**You have MCP tools available. You MUST use them. They are tool calls, not bash commands.**
+
+**HOW TO USE MCP TOOLS:**
+MCP tools appear in your tool list just like Read, Edit, Write, Bash, Grep, Glob, etc.
+You call them the SAME WAY you call any other tool - as a tool invocation.
+They are NOT bash commands. They are NOT Python scripts. They are TOOL CALLS.
+
+**Example - CORRECT (tool call):**
+```
+mcp__scribe__append_entry(agent="MyCoder", message="Did a thing", status="success")
+```
+This is a TOOL CALL. You invoke it like you invoke Read() or Edit().
+
+**Example - WRONG (bash):**
+```bash
+# NEVER DO THIS
+echo "logging..." | some_command
+python3 -c "import mcp..."
+curl localhost:8022/mcp/...
+```
+
+**RULES:**
+1. ❌ NEVER use Bash to do what an MCP tool does
+2. ❌ NEVER use `cat`, `echo`, `python`, `curl` to substitute for MCP tools
+3. ❌ NEVER skip Scribe logging because "I don't have access" - YOU DO, it's in your tool list
+4. ❌ NEVER use `php -l` via Bash to check syntax - use the Read tool to read the file, that's sufficient
+5. ✅ ALWAYS use `mcp__scribe__append_entry` as a TOOL CALL to log your work
+6. ✅ ALWAYS use `mcp__scribe__read_recent` as a TOOL CALL to check context
+7. ✅ ALWAYS use `mcp__mybb__*` tools as TOOL CALLS for MyBB operations
+8. ✅ Use the Edit tool for file edits, Read tool for reading files, Grep/Glob for searching
+
+**If you are a subagent and you think you don't have MCP tools: YOU ARE WRONG. Check your tool list. They are there. Use them.**
+
+**MANDATORY STARTUP SEQUENCE FOR ALL AGENTS (NO EXCEPTIONS):**
+Before doing ANY work - before reading files, before editing, before ANYTHING:
+1. Call `mcp__scribe__set_project(name="<project_name>", root="/home/austin/projects/MyBB_Playground")`
+2. Call `mcp__scribe__read_recent(n=5)`
+3. THEN and ONLY THEN start your actual work
+
+**If you skip steps 1 and 2, your work will be rejected. The orchestrator will tell you the project name in your prompt. Use it.**
+
+**Failure to use MCP tools = rejection of your work.**
+
 ### Database Access Prohibition
 
 **ABSOLUTE PROHIBITION - NO EXCEPTIONS:**
@@ -83,13 +132,17 @@ When told to "extract" code from File A to File B:
 
 **You must log decisions and progress with `append_entry`.** This is not optional.
 
+**BETWEEN EVERY SUBAGENT CALL, YOU MUST `append_entry`.** This is how subagents get context about what happened before them. When a subagent calls `read_recent`, YOUR entries are what they see. If you don't log, they work blind.
+
 **Log after:**
 - User makes a decision in discussion
 - You choose between approaches
-- A subagent completes work
+- **BEFORE spawning a subagent** (what you're asking them to do and why)
+- **AFTER a subagent completes** (what they accomplished, what's next)
 - A phase completes
 - Something unexpected happens
 - Every 2-3 significant actions
+- **After every context compaction/reset** (re-call `set_project` + `read_recent` first)
 
 **Minimum logging:**
 ```python
@@ -107,9 +160,16 @@ mcp__scribe__append_entry(
 )
 ```
 
+**NEVER read raw TaskOutput to check subagent results.** Use `read_recent` or `query_entries` instead — all agent work is logged to the Scribe progress log. The progress log IS the shared communication channel between orchestrator and subagents.
+
 **If you're not logging, you're doing it wrong.** The progress log is how we maintain context across sessions and audit our work. No excuses.
 
-All agents can and should use **scribe_mcp_read_recent** to read the latest entries to the progress log.
+**Context rehydration:** After EVERY context compaction or session reset, you MUST:
+1. `mcp__scribe__set_project(name="<project>", root="/home/austin/projects/MyBB_Playground")`
+2. `mcp__scribe__read_recent(n=10)` — to rehydrate what's been happening
+3. THEN resume work
+
+This is not optional. Skipping rehydration means you lose track of what subagents have done.
 
 ### Template Discovery via Chrome DevTools (IMPORTANT)
 
@@ -393,6 +453,8 @@ mcp__scribe__set_project(name="existing-project", root="/home/austin/projects/My
 - Pass the project name to ALL subagents in their prompts
 - Check `mcp__scribe__list_projects()` to find existing projects
 
+**⚠️ CRITICAL: `set_project` does NOT carry over to subagents.** Each subagent runs in its own isolated session. They MUST call `set_project` themselves at startup. Your orchestrator `set_project` only applies to YOUR session. This is why every subagent prompt must include the project name — they need it to call `set_project` on their own.
+
 ### Delegate, Don't Browse
 
 **For complex exploration, spawn research agents - don't waste your context browsing files:**
@@ -474,11 +536,24 @@ For all MyBB development work, **prefer these specialized agents over the generi
 ### Subagent Prompting
 
 **Every subagent prompt MUST include:**
-1. **Project name:** `Project: feature-name`
+1. **Project name:** `Project: feature-name` — subagent MUST call `set_project` with this
 2. **Root path:** `Root: /home/austin/projects/MyBB_Playground`
-3. **Clear scope:** What files, what changes, what NOT to touch
-4. **Verification criteria:** How to know the task is complete
-5. **Link to phase plan:** Subagents need the full context
+3. **Startup instruction:** "Call `set_project` then `read_recent(n=10)` before doing anything"
+4. **Clear scope:** What files, what changes, what NOT to touch
+5. **Verification criteria:** How to know the task is complete
+6. **Link to phase plan:** Subagents need the full context
+
+**Orchestrator workflow around subagent calls:**
+```
+1. append_entry("Dispatching <agent> to do <task>", status="plan")
+2. Task(subagent_type="...", prompt="Project: X. Root: /path. Call set_project + read_recent first. Then do <task>...")
+3. [subagent completes — it logged its work via append_entry]
+4. read_recent(n=10)  ← check what the subagent did via the progress log
+5. append_entry("Agent completed: <summary of what happened>. Next: <what comes next>")
+6. [continue to next subagent or phase]
+```
+
+**⚠️ NEVER use TaskOutput to read subagent results.** The progress log is the shared channel. Subagents log everything to Scribe. You read it back via `read_recent` or `query_entries`. This ensures all context is in one auditable place and available to future subagents.
 
 ### Commit Discipline
 
@@ -570,7 +645,9 @@ Task(
 These rules are MANDATORY for all agents. Violations = rejection.
 
 ### #0 — Always Rehydrate From Progress Log First
-- **Before ANY work:** Call `read_recent(n=5)` minimum, `query_entries` for targeted history
+- **Before ANY work:** Call `set_project` then `read_recent(n=10)` minimum, `query_entries` for targeted history
+- **After EVERY context compaction/reset:** Repeat `set_project` + `read_recent` — your project context does not survive compaction
+- **Subagents:** Each subagent MUST call `set_project` independently — it does NOT carry over from the orchestrator
 - **Why:** Progress log is source of truth. Skipping it causes hallucinated priorities and broken invariants
 - **Sentinel mode (no project):** `read_recent`/`query_entries` operate on global scope
 
@@ -583,6 +660,8 @@ These rules are MANDATORY for all agents. Violations = rejection.
 - **Rule:** Use `append_entry` for EVERY significant action
 - **If not Scribed, it didn't happen** — this is your audit trail
 - **Orchestrators:** Always pass `project_name` to subagents
+- **Orchestrators MUST log:** decisions, important events, bugs encountered (`open_bug` before dispatching bug hunter), before/after every subagent call, errors, phase transitions
+- **NEVER read TaskOutput for subagent results** — use `read_recent`/`query_entries` instead. The progress log is the shared communication channel.
 
 ### #2 — Reasoning Traces Required
 - **Every `append_entry` MUST include `reasoning` block:**
@@ -594,7 +673,10 @@ These rules are MANDATORY for all agents. Violations = rejection.
 ### #3 — MCP Tool Usage Policy
 - **If a tool exists, CALL IT DIRECTLY** — no manual scripting or substitutes
 - **Log intent AFTER** the tool call succeeds or fails
-- **File reads:** Use `read_file` — no manual/implicit reads
+- **File reads:** Use `scribe.read_file` — no `cat`/`head`/`tail`
+- **File search:** Use `scribe.search` — no `grep`/`rg`/`find`
+- **File edits:** Use `scribe.edit_file` (requires `read_file` first, defaults to `dry_run=True`)
+- **Managed docs:** Use `manage_docs` — direct Write/Edit on `.scribe/docs/dev_plans/` is **blocked by hook**
 - **Why:** Tool calls are the auditable execution layer
 
 ### #4 — Structure, Cleanliness, Tests
@@ -604,26 +686,41 @@ These rules are MANDATORY for all agents. Violations = rejection.
 
 ### Session Startup (Required)
 
-Every session must follow this workflow:
+Every session — and every context compaction/reset — must follow this workflow:
 
 ```python
 # 1. Activate project
 set_project(name="<project_name>", root="/home/austin/projects/MyBB_Playground")
 
-# 2. Rehydrate context
-read_recent(n=5)
+# 2. Rehydrate context (read MORE if you need broader history)
+read_recent(n=10)
 
 # 3. Log session start (REQUIRED)
 append_entry(
     message="Starting <task>",
     status="info",
-    agent="Claude",
+    agent="Orchestrator",
     meta={
         "task": "<task>",
         "reasoning": {"why": "...", "what": "...", "how": "..."}
     }
 )
 ```
+
+**This applies to context resets too.** When your context compacts mid-session, repeat steps 1-2 to rehydrate before continuing work. The progress log is your memory.
+
+### Orchestrator Scribe Obligations (NON-NEGOTIABLE)
+
+**If it's not Scribed, it didn't happen.** The orchestrator MUST log:
+
+- **Decisions:** User choices, approach selection, trade-off resolutions
+- **Important events:** Phase transitions, unexpected discoveries, blockers
+- **Bugs encountered:** Log with `open_bug` BEFORE dispatching bug hunter
+- **Before each subagent dispatch:** What you're asking them to do and why
+- **After each subagent completes:** Summary of results, what's next
+- **Errors and failures:** What went wrong, what you're doing about it
+
+**The progress log is the single source of truth.** Future agents, future sessions, and future you depend on it. Every decision, every event, every bug — Scribe it or it never happened.
 
 ### Development Protocol (REQUIRED)
 

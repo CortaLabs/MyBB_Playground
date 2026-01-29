@@ -96,6 +96,36 @@ claude mcp add --scope project --transport stdio mybb \
 
 Restart Claude Code to load the MCP server. Verify with `claude mcp get mybb`.
 
+### 3b. Optional: Chrome DevTools MCP
+
+The Chrome DevTools MCP server gives Claude browser control — navigate pages, take screenshots, inspect elements, and test CSS live. This is used heavily by the frontend agent for visual verification and template discovery.
+
+```bash
+# Install the Chrome DevTools MCP server
+npm install -g @anthropic/claude-chrome-devtools-mcp
+
+# Register with Claude Code (project scope)
+claude mcp add --scope project --transport stdio chrome-devtools \
+  -- npx @anthropic/claude-chrome-devtools-mcp --isolated
+
+# Launch Chrome with remote debugging enabled
+google-chrome --remote-debugging-port=9222
+# or on macOS:
+# /Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome --remote-debugging-port=9222
+```
+
+Restart Claude Code and verify with `claude mcp get chrome-devtools`.
+
+> **Note:** The `--isolated` flag avoids profile conflicts. You need Chrome/Chromium installed on your system.
+
+### 3c. Optional: Scribe MCP (Development Audit Logging)
+
+[Scribe MCP](https://github.com/CortaLabs/scribe_mcp) provides structured development logging, project tracking, and document management. All of the Claude Code agents in this repo are configured to use Scribe for audit trails.
+
+Follow the installation instructions at **https://github.com/CortaLabs/scribe_mcp**.
+
+**If you don't want Scribe:** Remove or modify the Scribe-specific instructions in `CLAUDE.md`, `AGENTS.md`, and the agent definitions in `.claude/agents/`. The MyBB MCP tools work independently of Scribe.
+
 ### Codex CLI Setup (MCP)
 
 Do **not** change existing Claude Code instructions.

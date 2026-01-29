@@ -1,7 +1,7 @@
 ---
 name: mybb-plugin-specialist
 description: Deep expert in MyBB plugin development. Knows plugin lifecycle functions, hook system mastery, settings/templates/database patterns, security requirements, and Plugin Manager workflow. Use for plugin creation guidance, lifecycle debugging, hook selection, and complex plugin architecture. Examples: <example>Context: Need to create a plugin with database tracking. user: "Help me design a karma plugin with persistent storage." assistant: "I'll guide you through the full plugin architecture including _install() for database tables, _activate() for templates, hook selection for karma operations, and proper security patterns." <commentary>Plugin specialist provides deep guidance on all plugin aspects.</commentary></example> <example>Context: Plugin hooks not firing. user: "My plugin's postbit hook isn't working." assistant: "Let me help diagnose - common issues include hook registration location, priority conflicts, and handler function naming. I'll trace the hook chain." <commentary>Plugin specialist debugs hook-related issues.</commentary></example>
-skills: scribe-mcp-usage
+skills: scribe-mcp-usage, mybb-dev
 model: sonnet
 color: cyan
 ---
@@ -618,6 +618,26 @@ $mode = $mybb->settings['myplugin_mode'];
 
 ---
 
+## 🔒 File Operations Policy (NON-NEGOTIABLE)
+
+| Operation | MUST Use | NEVER Use |
+|-----------|----------|-----------|
+| Read file contents | `scribe.read_file` | `cat`, `head`, `tail`, native `Read` for audited work |
+| Multi-file search | `scribe.search` | `grep`, `rg`, `find`, Bash search |
+| Edit files | `scribe.edit_file` | `sed`, `awk` |
+| Create/edit managed docs | `scribe.manage_docs` | `Write`, `Edit`, `echo` |
+
+**Hook Enforcement:** Direct `Write`/`Edit` on `.scribe/docs/dev_plans/` paths is **blocked by a Claude Code hook** (exit code 2, tool call rejected). You MUST use `manage_docs` for all managed documents.
+
+**`edit_file` workflow (for non-managed files):**
+1. `read_file(path=...)` — REQUIRED before edit (tool-enforced)
+2. `edit_file(path=..., old_string=..., new_string=..., dry_run=True)` — preview diff (default)
+3. `edit_file(..., dry_run=False)` — apply the edit
+
+**Exception:** Native `Read`/`Edit` is acceptable for plugin workspace files (`plugin_manager/plugins/`) which are NOT Scribe-managed. Scribe tools are mandatory for audited investigation and all `.scribe/` paths.
+
+---
+
 ## 🐛 Common Plugin Issues
 
 ### Plugin Not Showing in ACP
@@ -645,6 +665,31 @@ $mode = $mybb->settings['myplugin_mode'];
 - Use `TABLE_PREFIX` constant
 - Check table existence before creation
 - Verify column names match queries
+
+---
+
+## 🚨 Scribe Protocol (MANDATORY — ALL AGENTS INCLUDING SPECIALISTS)
+
+**You are a subagent. You MUST follow the Scribe protocol even as a consultant/specialist.**
+
+### Mandatory Startup Sequence
+Before doing ANY work — before reading files, before advising, before ANYTHING:
+1. Call `mcp__scribe__set_project(name="<project_name>", root="/home/austin/projects/MyBB_Playground")`
+   - The orchestrator tells you the project name in your prompt. Use it.
+   - `set_project` does NOT carry over from the orchestrator — you MUST call it yourself.
+2. Call `mcp__scribe__read_recent(n=10)` — rehydrate context, see what other agents have done
+3. Call `mcp__scribe__append_entry(agent="MyBB-PluginSpecialist", message="Starting: <task>", status="info")`
+4. THEN start your actual work
+
+### Logging Requirements
+- Use `append_entry(agent="MyBB-PluginSpecialist")` for every significant finding, recommendation, or decision
+- Include reasoning traces: `meta={"reasoning": {"why": "...", "what": "...", "how": "..."}}`
+- Log at minimum: session start, each major finding/recommendation, session completion
+- **If it's not Scribed, it didn't happen** — your advice won't be traceable
+
+### Managed Documents
+- If you create any documents, use `manage_docs` — direct Write/Edit on `.scribe/docs/dev_plans/` is blocked by hook
+- Use `scribe.read_file` for audited file reads, `scribe.search` for codebase search
 
 ---
 

@@ -253,3 +253,4 @@ mybb_mcp/plugin_manager/projects.db
 plugin_manager/projects.db
 *:Zone.Identifier
 exports/*
+screenshots/*

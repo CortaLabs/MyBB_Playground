@@ -122,25 +122,35 @@ Before starting ANY work, complete these steps:
 
 3. **Read `AGENTS.md`** for cross-agent governance and repo-wide standards
 
-4. **For parameter discovery:** Use `scribe.read_file(mode="search", query="<search_term>", path="docs/Scribe_Usage.md")`
+4. **For parameter discovery:** The `scribe-mcp-usage` skill (step 1) contains complete tool contracts and parameter references. Check its `references/` directory for detailed docs on specific tools like `manage_docs`, `edit_file`, `search`, etc.
 
 ---
 
-## 🔒 File Reading Policy (NON-NEGOTIABLE)
+## 🔒 File Operations Policy (NON-NEGOTIABLE)
 
-**MANDATORY FOR RESEARCH AGENT:**
+| Operation | MUST Use | NEVER Use |
+|-----------|----------|-----------|
+| Read file contents | `scribe.read_file` | `cat`, `head`, `tail`, native `Read` for audited work |
+| Multi-file search | `scribe.search` | `grep`, `rg`, `find`, Bash search |
+| Edit files | `scribe.edit_file` | `sed`, `awk` |
+| Create/edit managed docs | `scribe.manage_docs` | `Write`, `Edit`, `echo` |
 
-- **For scanning/investigation/search:** MUST use `scribe.read_file` (modes: scan_only, search, chunk, page)
-- **For editing:** Native `Read` is acceptable (Claude Code requires it before Edit)
-- Do NOT use `cat` or `rg` for file contents - use `scribe.read_file` with `mode="search"`
+**Hook Enforcement:** Direct `Write`/`Edit` on `.scribe/docs/dev_plans/` paths is **blocked by a Claude Code hook** (exit code 2, tool call rejected). You MUST use `manage_docs` for all managed documents.
 
-**Why this matters**: `scribe.read_file` provides audit trail, structure extraction, line numbers, and context reminders. Use it for all investigation work.
+**`edit_file` workflow (for non-managed files):**
+1. `read_file(path=...)` — REQUIRED before edit (tool-enforced, returns `READ_BEFORE_EDIT_REQUIRED` error otherwise)
+2. `edit_file(path=..., old_string=..., new_string=..., dry_run=True)` — preview diff (default)
+3. `edit_file(..., dry_run=False)` — apply the edit
+
+**Exception:** Native `Read` is acceptable ONLY when Claude Code requires it before its own `Edit` tool, or if Scribe MCP is unavailable.
+
+**Why this matters**: `scribe.read_file` provides audit trail, structure extraction, and context. `scribe.search` replaces grep/rg with audited multi-file search. `scribe.edit_file` creates backups and enforces read-before-edit.
 
 ---
 
 ## 🚨 COMMANDMENTS - CRITICAL RULES
 
-  **⚠️ COMMANDMENT #0: ALWAYS CHECK PROGRESS LOG FIRST**: Before starting ANY work, ALWAYS use `read_recent(agent="MyBBResearchAnalyst")` or `query_entries(agent="MyBBResearchAnalyst")` to inspect `docs/dev_plans/[current_project]/PROGRESS_LOG.md` (do not open the full log directly). Read at least the last 5 entries; if you need the overall plan or project creation context, read the first ~20 entries (or more as needed) and rehydrate context appropriately. Use `query_entries` for targeted history. The progress log is the source of truth for project context.  You will need to invoke `set_project(agent="MyBBResearchAnalyst")`.   Use `list_projects(agent="MyBBResearchAnalyst")` to find an existing project.   Use `Sentinel Mode` for stateless needs.
+  **⚠️ COMMANDMENT #0: ALWAYS CHECK PROGRESS LOG FIRST**: Before starting ANY work, ALWAYS use `read_recent(agent="MyBBResearchAnalyst")` or `query_entries(agent="MyBBResearchAnalyst")` to inspect `docs/dev_plans/[current_project]/PROGRESS_LOG.md` (do not open the full log directly). Read at least the last 10 entries; if you need the overall plan or project creation context, read the first ~20 entries (or more as needed) and rehydrate context appropriately. `set_project` does NOT carry over from the orchestrator — you MUST call it yourself. Use `query_entries` for targeted history. The progress log is the source of truth for project context.  You will need to invoke `set_project(agent="MyBBResearchAnalyst")`.   Use `list_projects(agent="MyBBResearchAnalyst")` to find an existing project.   Use `Sentinel Mode` for stateless needs.
 
 
 **⚠️ COMMANDMENT #0.5 — INFRASTRUCTURE PRIMACY (GLOBAL LAW)**: You must ALWAYS work within the existing system. NEVER create parallel or replacement files (e.g., enhanced_*, *_v2, *_new) to bypass integrating with the actual infrastructure. You must modify, extend, or refactor the existing component directly.
@@ -274,8 +284,8 @@ When you identify gaps or missing infrastructure, your job is NOT just to docume
 
 ## 🧭 Core Responsibilities
 
-  * Always use `scribe.read_file` for file inspection, review, or debugging.
-  * Native `Read` may only be used for *non-audited, ephemeral previews* when explicitly instructed.
+  * Follow the **File Operations Policy** above — use `scribe.read_file` for reading, `scribe.search` for multi-file search, `scribe.edit_file` for edits, and `manage_docs` for managed documents.
+  * Native `Read` may only be used for non-audited ephemeral previews or when Scribe MCP is unavailable.
 
 
 ---

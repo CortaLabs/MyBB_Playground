@@ -10,7 +10,8 @@ Changes to the MCP require a full reload, always ask the USER to restart codex.
 ### 0) Codex Constraints (Read First)
 - No subagents: Codex cannot spawn them here. Use separate `codex -p` invocations when you want parallel, focused work.
 - Use Scribe MCP tools for reads/logs; avoid shell reads for file contents.
-- Always rehydrate before work: `read_recent(n=5)` minimum; use `query_entries(...)` for targeted history when needed.
+- Always rehydrate before work: `set_project` then `read_recent(n=10)` minimum; use `query_entries(...)` for targeted history when needed.
+- **After every context compaction/reset:** Repeat `set_project` + `read_recent` — project context does not survive compaction.
 - Never use destructive commands without explicit user confirmation (`rm -r`, `rm -rf` are banned by default).
 - If a tool error occurs, fix the root cause before proceeding. Do not use workarounds.
 - If an MCP tool exists for the operation, call the tool (don’t reimplement it with scripts/manual steps).
@@ -21,13 +22,13 @@ Changes to the MCP require a full reload, always ask the USER to restart codex.
 - **No coding without a thorough plan.** Planning precedes implementation for all non-trivial work.
 - **If you don’t understand the task or scope:** read the `mybb-dev` skill docs before proceeding (see “MyBB Skill Docs”). Ask clarifying questions if still unclear.
 - **Single-agent execution:** Codex performs *all* protocol roles (SPEC/Research/Architect/Code/Review/Docs). We still keep the same gates and artifacts—just done by one agent.
-- **Parallel Codex sessions:** if you run multiple Codex sessions concurrently, use distinct Scribe `agent` names to avoid session collisions (see `docs/Scribe_Usage.md`).
+- **Parallel Codex sessions:** if you run multiple Codex sessions concurrently, use distinct Scribe `agent` names to avoid session collisions (see the `scribe-mcp-usage` skill for full reference).
 
 ### 1) Scribe Session Quickstart (Required)
 Every session must start with:
 ```python
 set_project(name="mybb-playground", root="/home/austin/projects/MyBB_Playground")  # staging/default
-read_recent(n=5)
+read_recent(n=10)
 append_entry(
   message="Starting <task>",
   status="info",
@@ -161,9 +162,19 @@ manage_docs(
 )
 ```
 
-### 2) File Access Rules
-- Read files with `mcp__scribe__read_file` (not `cat`, `sed`, etc.).
-- Only edit within repo paths; use `apply_patch` for small changes when possible.
+### 2) File Operations Policy
+
+| Operation | MUST Use | NEVER Use |
+|-----------|----------|-----------|
+| Read file contents | `scribe.read_file` | `cat`, `head`, `tail`, native `Read` for audited work |
+| Multi-file search | `scribe.search` | `grep`, `rg`, `find`, Bash search |
+| Edit files | `scribe.edit_file` | `sed`, `awk` |
+| Create/edit managed docs | `scribe.manage_docs` | `Write`, `Edit`, `echo` |
+
+- **Hook Enforcement:** Direct `Write`/`Edit` on `.scribe/docs/dev_plans/` paths is **blocked by a Claude Code hook** (exit code 2). You MUST use `manage_docs`.
+- `edit_file` requires `read_file` on the same path first (tool-enforced). Defaults to `dry_run=True`.
+- Native `Read`/`Edit` is acceptable for plugin workspace files (`plugin_manager/`, `mybb_sync/`) which are not Scribe-managed.
+- Only edit within repo paths.
 
 ### 3) MyBB Ground Rules (Non-Negotiable)
 - Do not edit core MyBB files in `TestForum/`.
@@ -337,7 +348,7 @@ These rules exist because breaking them causes repeated, expensive failures.
 Minimum correct start for any non-trivial work:
 ```python
 set_project(name="mybb-playground", root="/home/austin/projects/MyBB_Playground")
-read_recent(n=5)
+read_recent(n=10)
 append_entry(
   message="Starting <task>",
   status="info",
@@ -348,9 +359,9 @@ append_entry(
 Log after meaningful actions and at completion.
 
 ## 3) File Read / Write Rules
-- Prefer `mcp__scribe__read_file` for file contents (avoid `cat`, `sed`, etc. for content).
-- Use `apply_patch` for edits; keep patches small and scoped.
-- “Extraction” means move, not duplicate (copy-then-delete from source, then wire imports/references).
+- Use `scribe.read_file` for file contents, `scribe.search` for multi-file search, `scribe.edit_file` for edits
+- Direct `Write`/`Edit` on `.scribe/docs/dev_plans/` is **blocked by hook** — use `manage_docs`
+- "Extraction" means move, not duplicate (copy-then-delete from source, then wire imports/references).
 - Do not create replacement forks like `*_v2`, `enhanced_*`, `*_new` to avoid integration—extend existing components.
 
 ## 4) Plugin Development Workflow (Required)
